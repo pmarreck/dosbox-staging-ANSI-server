@@ -345,7 +345,17 @@ if (C_ALSA)
 endif()
 pkg_check_modules(SPEEXDSP REQUIRED IMPORTED_TARGET speexdsp)
 
-add_executable(dosbox src/main.cpp src/dosbox.cpp)
+add_executable(dosbox
+    src/main.cpp
+    src/dosbox.cpp
+    src/textmode_server/textmode_server.cpp
+    src/textmode_server/snapshot.cpp
+    src/textmode_server/encoder.cpp
+    src/textmode_server/service.cpp
+    src/textmode_server/keyboard_processor.cpp
+    src/textmode_server/server.cpp
+    src/textmode_server/command_processor.cpp
+)
 target_include_directories(
   dosbox PUBLIC include ${CMAKE_CURRENT_BINARY_DIR}/include
 )
@@ -407,6 +417,7 @@ target_link_libraries(libdosboxcommon PRIVATE
   $<IF:$<TARGET_EXISTS:iir::iir>,iir::iir,iir::iir_static>
   loguru
   libdecoders
+  $<IF:$<TARGET_EXISTS:SDL2_net::SDL2_net>,SDL2_net::SDL2_net,SDL2_net::SDL2_net-static>
 )
 
 target_link_libraries(dosbox PRIVATE

@@ -38,6 +38,7 @@
 #include "hardware/video/voodoo.h"
 #include "ints/int10.h"
 #include "midi/midi.h"
+#include "textmode_server/textmode_server.h"
 #include "misc/cross.h"
 #include "misc/support.h"
 #include "misc/tracy.h"
@@ -903,6 +904,9 @@ void DOSBOX_InitAllModuleConfigsAndMessages()
 
 	// Configure capture
 	CAPTURE_AddConfigSection(control);
+
+	// Configure text-mode server
+	TEXTMODESERVER_AddConfigSection(control);
 
 	// Configure mouse
 	MOUSE_AddConfigSection(control);

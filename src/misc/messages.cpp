@@ -850,11 +850,14 @@ static std::optional<std::string> get_new_language_file()
 
 	// If not available, get it from the config file
 	if (language_file.empty()) {
-		const auto section = control->GetSection("dosbox");
-		assert(section);
-
-		language_file = static_cast<const SectionProp*>(section)->GetString(
-		        "language");
+	const auto section = control->GetSection("dosbox");
+	const auto props   = dynamic_cast<const SectionProp*>(section);
+	if (!props) {
+		return {};
+	}
+	const auto language_prop = props->GetStringProp("language");
+	language_file = language_prop ? static_cast<std::string>(language_prop->GetValue())
+	                              : std::string();
 	}
 
 	// Check if requested language has changed

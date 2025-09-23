@@ -26,6 +26,16 @@ https://www.dosbox-staging.org/
 
 First-time users and people migrating from other DOSBox variants should start by reading the [Getting started guide](https://www.dosbox-staging.org/getting-started/).
 
+## Text-mode server
+
+For headless automation, DOSBox Staging exposes an optional TCP text-mode
+server that streams ANSI-rendered frames and accepts scripted keyboard input.
+Enable the `[textmode_server]` section in your configuration and connect with
+`nc` or your own client to issue `GET`, `APPLY`, `STATS`, or `EXIT` commands.
+
+Detailed instructions and examples live in the
+[text-mode server guide](https://www.dosbox-staging.org/getting-started/textmode-server/).
+
 ## Build status
 
 [![Linux x86\_64 build status][build-lin1-badge]][build-lin1-ci]
@@ -298,4 +308,3 @@ git fetch origin "refs/notes/*:refs/notes/*"
 
 Please refer to the [documentation guide](DOCUMENTATION.md) before making
 changes to the website or the documentation.
-

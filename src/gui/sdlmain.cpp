@@ -61,6 +61,7 @@
 #include "misc/tracy.h"
 #include "misc/video.h"
 #include "shell/command_line.h"
+#include "textmode_server/textmode_server.h"
 #include "utils/checks.h"
 #include "utils/fs_utils.h"
 #include "utils/math_utils.h"
@@ -479,6 +480,7 @@ SDL_Window* GFX_GetSDLWindow()
 
 static void QuitSDL()
 {
+	textmode::Shutdown();
 	if (sdl.initialized) {
 #if !C_DEBUGGER
 		SDL_Quit();
@@ -3902,6 +3904,8 @@ bool DOSBOX_PollAndHandleEvents()
 		default: MAPPER_CheckEvent(&event);
 		}
 	}
+
+	textmode::Poll();
 	return !shutdown_requested;
 }
 
@@ -5092,4 +5096,3 @@ int sdl_main(int argc, char* argv[])
 
 	return return_code;
 }
-

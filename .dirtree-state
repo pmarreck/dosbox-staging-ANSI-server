@@ -1,0 +1,7 @@
+ver=1.1
+default=closed
+
+close=[
+	/\/docs?\//
+	.git
+]

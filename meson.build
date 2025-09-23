@@ -1176,6 +1176,7 @@ third_party_deps = [
     atomic_dep,
     stdcppfs_dep,
     sdl2_dep,
+    sdl2_net_dep,
     threads_dep,
     ghc_dep,
     libglad_dep,
@@ -1223,7 +1224,17 @@ configure_file(
 # Set up the executable and libraries
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-dosbox_sources = ['src/main.cpp', 'src/dosbox.cpp']
+dosbox_sources = [
+    'src/main.cpp',
+    'src/dosbox.cpp',
+    'src/textmode_server/textmode_server.cpp',
+    'src/textmode_server/snapshot.cpp',
+    'src/textmode_server/encoder.cpp',
+    'src/textmode_server/service.cpp',
+    'src/textmode_server/keyboard_processor.cpp',
+    'src/textmode_server/server.cpp',
+    'src/textmode_server/command_processor.cpp',
+]
 
 # Add Windows resources file if building on Windows
 if host_machine.system() == 'windows'
@@ -1232,7 +1243,7 @@ if host_machine.system() == 'windows'
     dosbox_sources += res_file
 endif
 
-executable(
+dosbox_exe = executable(
     'dosbox',
     dosbox_sources,
     dependencies: internal_deps + third_party_deps,
@@ -1244,7 +1255,14 @@ executable(
 # create a library so we can test things inside DOSBOX dep path
 libdosbox = static_library(
     'dosbox',
-    ['src/dosbox.cpp'],
+    ['src/dosbox.cpp',
+     'src/textmode_server/textmode_server.cpp',
+     'src/textmode_server/snapshot.cpp',
+     'src/textmode_server/encoder.cpp',
+     'src/textmode_server/service.cpp',
+     'src/textmode_server/keyboard_processor.cpp',
+     'src/textmode_server/server.cpp',
+     'src/textmode_server/command_processor.cpp'],
     include_directories: incdir,
     dependencies: internal_deps + third_party_deps,
 )

@@ -43,7 +43,7 @@ endforeach
 example = executable(
     'example',
     ['example_tests.cpp', 'stubs.cpp'],
-    dependencies: [gmock_dep, libmisc_stubs_dep, libshell_stubs_dep, ghc_dep, libloguru_dep],
+    dependencies: [gmock_dep, libmisc_stubs_dep, libshell_stubs_dep, ghc_dep, libloguru_dep, libutils_dep],
     include_directories: incdir,
     cpp_args: cpp_args,
 )
@@ -52,7 +52,7 @@ test('gtest example', example, should_fail: true)
 fs_utils = executable(
     'fs_utils',
     ['fs_utils_tests.cpp', 'stubs.cpp'],
-    dependencies: [gmock_dep, libmisc_stubs_dep, libshell_stubs_dep, ghc_dep, libloguru_dep],
+    dependencies: [gmock_dep, libmisc_stubs_dep, libshell_stubs_dep, ghc_dep, libloguru_dep, libutils_dep],
     include_directories: incdir,
     cpp_args: cpp_args,
 )
@@ -102,6 +102,19 @@ unit_tests = [
     {'name': 'shell_redirection', 'deps': [dosbox_dep], 'extra_cpp': []},
     {'name': 'string_utils', 'deps': [libmisc_stubs_dep, libshell_stubs_dep]},
     {'name': 'support', 'deps': [libmisc_stubs_dep, libshell_stubs_dep]},
+    {'name': 'textmode_server_config', 'deps': [dosbox_dep], 'extra_cpp': ['stubs.cpp']},
+    {'name': 'textmode_snapshot', 'deps': [dosbox_dep], 'extra_cpp': []},
+    {'name': 'textmode_encoding', 'deps': [dosbox_dep], 'extra_cpp': []},
+    {'name': 'textmode_service', 'deps': [dosbox_dep], 'extra_cpp': []},
+    {'name': 'textmode_command_processor', 'deps': [dosbox_dep], 'extra_cpp': []},
+    {'name': 'textmode_keyboard_processor', 'deps': [dosbox_dep], 'extra_cpp': []},
+    {'name': 'textmode_server_tcp', 'deps': [dosbox_dep], 'extra_cpp': []},
+    {'name': 'textmode_server_api', 'deps': [dosbox_dep], 'extra_cpp': []},
+    {'name': 'textmode_roundtrip',
+     'deps': [dosbox_dep, sdl2_dep, sdl2_net_dep],
+     'extra_cpp': [],
+     'depends': [dosbox_exe],
+     'env': {'DOSBOX_TEST_BIN': dosbox_exe.full_path()}},
 ]
 
 extra_link_flags = []
@@ -118,7 +131,7 @@ foreach ut : unit_tests
     exe = executable(
         name,
         [name + '_tests.cpp'] + extra_cpp,
-        dependencies: [gmock_dep, ghc_dep, libloguru_dep] + ut.get('deps'),
+        dependencies: [gmock_dep, ghc_dep, libloguru_dep, libutils_dep] + ut.get('deps'),
         link_args: extra_link_flags,
         include_directories: incdir,
         cpp_args: cpp_args,

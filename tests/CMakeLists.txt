@@ -28,6 +28,16 @@ add_executable(dosbox_tests
     string_utils_tests.cpp
     # stubs.cpp
     support_tests.cpp
+    textmode_server_config_tests.cpp
+    textmode_snapshot_tests.cpp
+    textmode_encoding_tests.cpp
+    textmode_service_tests.cpp
+    textmode_command_processor_tests.cpp
+    textmode_keyboard_processor_tests.cpp
+    textmode_server_tcp_tests.cpp
+    textmode_server_api_tests.cpp
+    textmode_roundtrip_tests.cpp
+    stubs.cpp
 )
 
 # Disable some warnings for deliberately flawed test cases
@@ -48,6 +58,7 @@ target_link_libraries(dosbox_tests PRIVATE
     GTest::gmock_main
     libdosboxcommon
     $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+    $<IF:$<TARGET_EXISTS:SDL2_net::SDL2_net>,SDL2_net::SDL2_net,SDL2_net::SDL2_net-static>
 )
 
 include(GoogleTest)

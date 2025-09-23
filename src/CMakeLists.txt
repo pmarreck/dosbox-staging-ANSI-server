@@ -16,5 +16,14 @@ add_subdirectory(shell)
 add_subdirectory(utils)
 
 if(OPT_TESTS)
-    target_sources(dosbox_tests PRIVATE dosbox.cpp)
+    target_sources(dosbox_tests PRIVATE
+        dosbox.cpp
+        textmode_server/textmode_server.cpp
+        textmode_server/snapshot.cpp
+        textmode_server/encoder.cpp
+        textmode_server/service.cpp
+        textmode_server/keyboard_processor.cpp
+        textmode_server/server.cpp
+        textmode_server/command_processor.cpp
+    )
 endif()
