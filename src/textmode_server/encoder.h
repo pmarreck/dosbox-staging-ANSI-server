@@ -7,12 +7,14 @@
 #include "textmode_server/snapshot.h"
 
 #include <string>
+#include <vector>
 
 namespace textmode {
 
 struct EncodingOptions {
 	bool show_attributes = true;
 	std::string sentinel = "\xF0\x9F\x96\xB5"; // 🖵
+	std::vector<std::string> keys_down = {};
 };
 
 std::string BuildAnsiFrame(const Snapshot& snapshot, const EncodingOptions& options);

@@ -36,9 +36,9 @@ protected:
 
 TEST_F(KeyboardProcessorTest, PressSendsKeyDownAndUp)
 {
-	const auto [ok, payload] = Execute("PRESS a");
+    const auto [ok, payload] = Execute("PRESS A");
 
-	ASSERT_TRUE(ok);
+	ASSERT_TRUE(ok) << payload;
 	EXPECT_EQ(payload, "OK\n");
 
 	ASSERT_EQ(events.size(), 2u);
@@ -50,12 +50,12 @@ TEST_F(KeyboardProcessorTest, PressSendsKeyDownAndUp)
 
 TEST_F(KeyboardProcessorTest, DownThenUp)
 {
-	auto [ok_down, payload_down] = Execute("DOWN leftshift");
+    auto [ok_down, payload_down] = Execute("DOWN LeftShift");
 
-	ASSERT_TRUE(ok_down);
+	ASSERT_TRUE(ok_down) << payload_down;
 	EXPECT_EQ(payload_down, "OK\n");
 
-	auto [ok_up, payload_up] = Execute("UP LEFTSHIFT");
+    auto [ok_up, payload_up] = Execute("UP LeftShift");
 	ASSERT_TRUE(ok_up);
 	EXPECT_EQ(payload_up, "OK\n");
 
@@ -66,16 +66,16 @@ TEST_F(KeyboardProcessorTest, DownThenUp)
 
 TEST_F(KeyboardProcessorTest, DuplicateDownFails)
 {
-	ASSERT_TRUE(Execute("DOWN ctrl").first);
+    ASSERT_TRUE(Execute("DOWN Ctrl").first);
 
-	auto [ok, payload] = Execute("DOWN CTRL");
+    auto [ok, payload] = Execute("DOWN Ctrl");
 	EXPECT_FALSE(ok);
 	EXPECT_EQ(payload, "ERR key already down\n");
 }
 
 TEST_F(KeyboardProcessorTest, UpWithoutDownFails)
 {
-	auto [ok, payload] = Execute("UP o");
+    auto [ok, payload] = Execute("UP O");
 	EXPECT_FALSE(ok);
 	EXPECT_EQ(payload, "ERR key not down\n");
 }
@@ -89,7 +89,7 @@ TEST_F(KeyboardProcessorTest, UnknownKeyRejected)
 
 TEST_F(KeyboardProcessorTest, ResetReleasesHeldKeys)
 {
-	ASSERT_TRUE(Execute("DOWN z").first);
+    ASSERT_TRUE(Execute("DOWN Z").first);
 	ASSERT_EQ(events.size(), 1u);
 	EXPECT_EQ(events.front(), std::make_pair(KBD_z, true));
 
@@ -101,7 +101,7 @@ TEST_F(KeyboardProcessorTest, ResetReleasesHeldKeys)
 	EXPECT_EQ(events.back().first, events.front().first);
 	EXPECT_FALSE(events.back().second);
 
-	auto [up_ok, up_payload] = Execute("UP z");
+    auto [up_ok, up_payload] = Execute("UP Z");
 	EXPECT_FALSE(up_ok);
 	EXPECT_EQ(up_payload, "ERR key not down\n");
 }
@@ -112,7 +112,7 @@ TEST_F(KeyboardProcessorTest, StatsReportCounts)
 	EXPECT_FALSE(Execute("DOWN unknown").first);
 
 	auto [ok, payload] = Execute("STATS");
-	ASSERT_TRUE(ok);
+	ASSERT_TRUE(ok) << payload;
 	EXPECT_EQ(payload, "commands=3 success=1 failures=1\n");
 }
 

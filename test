@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+build_dir="${project_root}/build/debug"
+
+if [[ ! -f "${build_dir}/meson-info/meson-info.json" ]]; then
+  nix develop -c meson setup "${build_dir}" --buildtype=debugoptimized
+fi
+
+nix develop -c meson test -C "${build_dir}"

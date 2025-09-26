@@ -41,8 +41,10 @@ TEST(TextModeEncodingTest, EncodesWithAnsiAttributes)
 	        "\xF0\x9F\x96\xB5META rows=1\n"
 	        "\xF0\x9F\x96\xB5META cursor=disabled\n"
 	        "\xF0\x9F\x96\xB5META attributes=show\n"
+	        "\xF0\x9F\x96\xB5META keys_down=\n"
 	        "\xF0\x9F\x96\xB5PAYLOAD\n"
-	        "\x1b[0m\x1b[0;1;93;44mA\x1b[0;37;40mB\x1b[0m\n";
+	        "\x1b[0m\x1b[0;38;2;255;255;85;48;2;0;0;170mA"
+	        "\x1b[0;38;2;170;170;170;48;2;0;0;0mB\x1b[0m\n";
 
 	EXPECT_EQ(frame, expected);
 }
@@ -68,6 +70,7 @@ TEST(TextModeEncodingTest, EncodesWithoutAttributes)
 	        "sMETA rows=1\n"
 	        "sMETA cursor=0,1 visible=1\n"
 	        "sMETA attributes=hide\n"
+	        "sMETA keys_down=\n"
 	        "sPAYLOAD\nCD\n";
 
 	EXPECT_EQ(frame, expected);

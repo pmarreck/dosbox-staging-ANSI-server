@@ -7,6 +7,7 @@
 #include "textmode_server/command_processor.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -70,9 +71,16 @@ public:
 	bool Start(uint16_t port, ICommandProcessor& processor);
 	void Stop();
 	void Poll();
+	void SetCloseAfterResponse(bool enable) { m_close_after_response = enable; }
+ 	void SetClientCloseCallback(std::function<void(ClientHandle)> callback)
+	{
+		m_client_close_callback = std::move(callback);
+	}
 
 	bool IsRunning() const { return m_running; }
 	uint16_t Port() const { return m_port; }
+	bool Send(ClientHandle client, const std::string& payload);
+	void Close(ClientHandle client);
 
 private:
 	struct Session {
@@ -87,6 +95,8 @@ private:
 	std::unordered_map<ClientHandle, Session> m_sessions;
 	bool m_running   = false;
 	uint16_t m_port  = 0;
+	bool m_close_after_response = false;
+	std::function<void(ClientHandle)> m_client_close_callback;
 };
 
 std::unique_ptr<NetworkBackend> MakeSdlNetBackend();

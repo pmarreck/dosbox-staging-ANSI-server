@@ -15,57 +15,51 @@ enable = true            # default: false
 port = 6200              # default: 6000
 show_attributes = true   # emit ANSI colour when true, plain text when false
 sentinel = 🖵            # UTF-8 marker separating metadata from payload
-
-# Optional keyboard bridge
-keyboard_enable = true   # default: false
-keyboard_port = 6201     # default: 6001
+close_after_response = false  # close TCP socket after each reply when true
 ```
 
-When the service is active the frame port exposes the following protocol
-commands:
+Commands are newline-terminated and case-sensitive; verbs must be uppercase or
+the server will reject them with `ERR commands are case-sensitive` while
+suggesting the expected spelling. When the service is active the frame port
+exposes the following protocol commands:
 
 | Command            | Description |
 |--------------------|-------------|
 | `GET`              | Returns one snapshot (metadata + ANSI payload). |
 | `GET SHOWSPC`      | Same as `GET`, but space characters are shown as middle dots. |
-| `APPLY …`          | Applies one or more keystrokes (see below) and, unless overridden, returns the resulting frame. |
+| `TYPE …`           | Sends key input to the guest. Add `GET` or `VIEW` at the end to fetch the resulting frame. |
 | `STATS`            | Reports cumulative request, success, and failure counts. |
 | `EXIT`             | Requests a clean emulator shutdown (`OK` is returned once accepted). |
 
-### APPLY helper
+### `TYPE` helper
 
-`APPLY` accepts whitespace-separated tokens:
+`TYPE` accepts whitespace-separated, case-sensitive tokens and processes them
+sequentially:
 
-- `keys=RightRightA` – sequences are matched against the longest known key
-  names (for example `Right`, `Left`, `Esc`) and one-letter tokens are treated
-  case-insensitively.
-- `keydown=Shift` / `keyup=Shift` – simulate modifier presses without automatic
-  release.
-- `response=ok|frame|none` – choose the reply type (`frame` is the default).
+- Basic key names behave like `PRESS <key>` (for example `TYPE A B` presses the
+  A and B keys).
+- Suffix `Down` or `Up` to hold or release keys explicitly (`TYPE ShiftDown P
+  ShiftUp`).
+- Append `GET` or `VIEW` (synonyms) to request the post-input frame. Without
+  either token the command replies with `OK`.
+- Double-quoted strings expand into character-wise typing, automatically
+  toggling `Shift` when needed (for example `TYPE "Peter" VIEW`). Use `\"`
+  for literal quotes and `\\` for literal backslashes inside strings.
+- Stand-alone tokens ending in `ms` introduce delays (for example `TYPE A 250ms
+  B`). Values must be positive integers.
+- Tokens ending in `frame` or `frames` defer execution for the requested number
+  of presentation ticks (for example `TYPE A 3frames VIEW`).
+- The literal backslash key is spelled `\\` outside of quoted strings.
+- Unrecognised tokens are ignored after being logged to stderr.
+- Use `Enter`/`Return` (or embed `\n` inside quotes) to submit an Enter key.
 
 Examples:
 
 ```
-APPLY keys=login response=frame
-APPLY keydown=Shift keys=Tab keyup=Shift response=ok
-APPLY keys=RightRightA response=none
+TYPE ShiftDown P ShiftUp E T E R VIEW
+TYPE "Peter" 150ms " Parker" VIEW
+TYPE A B C
 ```
-
-### Keyboard port
-
-If `keyboard_enable` is true a second listener handles low-level key commands:
-
-| Command              | Description |
-|----------------------|-------------|
-| `PRESS <key>`        | Presses and releases a key (fails if the key is already down). |
-| `DOWN <key>` / `UP <key>` | Explicit key down/up transitions. |
-| `RESET`              | Releases every key currently held by the helper. |
-| `STATS`              | Returns the command/success/failure counters. |
-
-Key names mirror the emulator’s mapper: they include single letters and digits,
-function keys (`F1`…`F24`), arrows, modifiers (`Shift`, `Ctrl`, `Alt`, `Gui`),
-keypad entries (`NumPad1`, `KP+`, etc.), and many regional variants. The
-matching is case-insensitive.
 
 ## Sample workflow
 
@@ -77,7 +71,8 @@ matching is case-insensitive.
    ```
 3. Type text and fetch the updated display:
    ```
-   printf 'APPLY keys=hello\n' | nc -N 127.0.0.1 6200
+   printf 'TYPE "hello"\n' | nc -N 127.0.0.1 6200
+   sleep 0.1
    printf 'GET\n' | nc -N 127.0.0.1 6200
    ```
 4. Shut down cleanly when finished:
@@ -86,16 +81,26 @@ matching is case-insensitive.
    ```
 
 The frame metadata always precedes the payload and includes geometry,
-cursor position (row, column, visibility), and whether colour attributes were
-included. Payload rows use CP437 characters and ANSI escape sequences when
-`show_attributes=true`.
+cursor position (row, column, visibility), whether colour attributes were
+included, and the comma-separated list of held keys (`keys_down`). Payload rows
+use CP437 characters with 24-bit ANSI escape sequences when
+`show_attributes=true` so the palette remains faithful to DOS. Plain text is
+returned when `show_attributes=false`.
 
 ## Notes
 
 - `EXIT` is the preferred way to stop headless sessions driven through the
-  text-mode API. The emulator closes both listeners once it acknowledges the
+  text-mode API. The emulator closes the listener once it acknowledges the
   request.
-- `APPLY` is convenient for scripting, but the keyboard port remains available
-  for tools that need precise control over modifier state or typematic timing.
 - The default sentinel is `U+1F5F5` (🖵). You can pick any UTF-8 sequence that
   does not appear in metadata/payload to simplify downstream parsing.
+- `STATS` reports the cumulative counters plus a `keys_down` summary of keys
+  that remain pressed after recent commands.
+- `close_after_response=true` forces the server to close sockets after each
+  reply; otherwise connections stay open and accept further commands.
+- `TYPE` logs any token it cannot interpret and keeps processing the rest of
+  the line; use stderr or the `STATS` counters to spot ignored input.
+- `TYPE` executes via a queued action sink. `<N>frames` tokens and the
+  `macro_interkey_frames` configuration option defer keystrokes until the
+  emulator renders another frame, making inline `VIEW` snapshots more
+  reliable.

@@ -245,7 +245,9 @@ TextModeServer::TextModeServer(std::unique_ptr<NetworkBackend> backend)
           m_processor(nullptr),
           m_sessions(),
           m_running(false),
-          m_port(0)
+          m_port(0),
+          m_close_after_response(false),
+          m_client_close_callback()
 {
 	assert(m_backend);
 }
@@ -295,6 +297,23 @@ void TextModeServer::Stop()
 	m_port      = 0;
 }
 
+bool TextModeServer::Send(const ClientHandle client, const std::string& payload)
+{
+	if (!m_backend) {
+		return false;
+	}
+	return m_backend->Send(client, payload);
+}
+
+void TextModeServer::Close(const ClientHandle client)
+{
+	if (!m_backend) {
+		return;
+	}
+	m_backend->Close(client);
+	m_sessions.erase(client);
+}
+
 void TextModeServer::Poll()
 {
 	if (!m_running || !m_backend || !m_processor) {
@@ -339,16 +358,22 @@ void TextModeServer::HandleData(const ClientHandle client, const std::string& da
 		if (!line.empty() && line.back() == '\r') {
 			line.pop_back();
 		}
+		const auto response = m_processor->HandleCommand(line, CommandOrigin{client});
+		if (!response.deferred) {
+			if (!m_backend->Send(client, response.payload)) {
+				Drop(client);
+				break;
+			}
 
-		const auto response = m_processor->HandleCommand(line);
-		if (!m_backend->Send(client, response.payload)) {
-			Drop(client);
-			break;
-		}
+			if (m_close_after_response) {
+				Drop(client);
+				break;
+			}
 
-		if (m_processor->ConsumeExitRequest()) {
-			Drop(client);
-			break;
+			if (m_processor->ConsumeExitRequest()) {
+				Drop(client);
+				break;
+			}
 		}
 	}
 }
@@ -358,6 +383,9 @@ void TextModeServer::Drop(const ClientHandle client)
 	m_sessions.erase(client);
 	if (m_backend) {
 		m_backend->Close(client);
+	}
+	if (m_client_close_callback) {
+		m_client_close_callback(client);
 	}
 }
 

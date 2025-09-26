@@ -127,7 +127,8 @@ TEST_F(TextModeServerTcpTest, DispatchesCommands)
 	ASSERT_EQ(backend_ptr->sent.size(), 2u);
 	EXPECT_EQ(backend_ptr->sent[0].first, client);
 	EXPECT_EQ(backend_ptr->sent[0].second, "FRAME\n");
-	EXPECT_EQ(backend_ptr->sent[1].second, "requests=1 success=1 failures=0\n");
+	EXPECT_EQ(backend_ptr->sent[1].second,
+	          "requests=1 success=1 failures=0 keys_down=\n");
 }
 
 TEST_F(TextModeServerTcpTest, HandlesPartialLines)
@@ -194,7 +195,7 @@ TEST_F(TextModeServerTcpTest, SupportsKeyboardProcessor)
 	backend_ptr->QueueEvents({BackendEvent::Connected(client)});
 	server.Poll();
 
-	backend_ptr->QueueEvents({BackendEvent::Data(client, "DOWN a\nUP a\n")});
+	backend_ptr->QueueEvents({BackendEvent::Data(client, "DOWN A\nUP A\n")});
 	server.Poll();
 
 	ASSERT_EQ(events.size(), 2u);

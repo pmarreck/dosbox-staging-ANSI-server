@@ -56,13 +56,10 @@ TEST_F(TextModeServerConfigTest, Defaults)
 	const std::string expected_sentinel = "\xF0\x9F\x96\xB5";
 	EXPECT_EQ(static_cast<std::string>(sentinel_prop->GetValue()), expected_sentinel);
 
-	auto* keyboard_enable_prop = props->GetBoolProp("keyboard_enable");
-	ASSERT_NE(keyboard_enable_prop, nullptr);
-	EXPECT_FALSE(keyboard_enable_prop->GetValue());
+	auto* close_prop = props->GetBoolProp("close_after_response");
+	ASSERT_NE(close_prop, nullptr);
+	EXPECT_FALSE(close_prop->GetValue());
 
-	auto* keyboard_port_prop = dynamic_cast<PropInt*>(props->GetProperty("keyboard_port"));
-	ASSERT_NE(keyboard_port_prop, nullptr);
-	EXPECT_EQ(static_cast<int>(keyboard_port_prop->GetValue()), 6001);
 }
 
 TEST_F(TextModeServerConfigTest, Overrides)
@@ -74,8 +71,8 @@ TEST_F(TextModeServerConfigTest, Overrides)
 	ASSERT_TRUE(props->HandleInputline("port = 6123"));
 	ASSERT_TRUE(props->HandleInputline("show_attributes = false"));
 	ASSERT_TRUE(props->HandleInputline("sentinel = @"));
-	ASSERT_TRUE(props->HandleInputline("keyboard_enable = true"));
-	ASSERT_TRUE(props->HandleInputline("keyboard_port = 6500"));
+	ASSERT_TRUE(props->HandleInputline("close_after_response = true"));
+
 
 	auto* enable_prop = props->GetBoolProp("enable");
 	ASSERT_NE(enable_prop, nullptr);
@@ -93,13 +90,10 @@ TEST_F(TextModeServerConfigTest, Overrides)
 	ASSERT_NE(sentinel_prop, nullptr);
 	EXPECT_EQ(static_cast<std::string>(sentinel_prop->GetValue()), "@");
 
-	auto* keyboard_enable_prop = props->GetBoolProp("keyboard_enable");
-	ASSERT_NE(keyboard_enable_prop, nullptr);
-	EXPECT_TRUE(keyboard_enable_prop->GetValue());
+	auto* close_prop = props->GetBoolProp("close_after_response");
+	ASSERT_NE(close_prop, nullptr);
+	EXPECT_TRUE(close_prop->GetValue());
 
-	auto* keyboard_port_prop = dynamic_cast<PropInt*>(props->GetProperty("keyboard_port"));
-	ASSERT_NE(keyboard_port_prop, nullptr);
-	EXPECT_EQ(static_cast<int>(keyboard_port_prop->GetValue()), 6500);
 }
 
 } // namespace

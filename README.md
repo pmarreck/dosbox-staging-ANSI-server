@@ -28,12 +28,86 @@ First-time users and people migrating from other DOSBox variants should start by
 
 ## Text-mode server
 
-For headless automation, DOSBox Staging exposes an optional TCP text-mode
-server that streams ANSI-rendered frames and accepts scripted keyboard input.
-Enable the `[textmode_server]` section in your configuration and connect with
-`nc` or your own client to issue `GET`, `APPLY`, `STATS`, or `EXIT` commands.
+The optional text-mode server lets automation harnesses stream ANSI snapshots
+of the 80×25 text plane, capture cursor metadata, and drive simulated keyboard
+input over a localhost TCP socket—no debugger or ptrace hooks required. It is
+disabled by default; enable it in the configuration file whenever you need a
+headless interface.
 
-Detailed instructions and examples live in the
+### Configuration
+
+```
+[textmode_server]
+enable = true             # start the service (default: false)
+port = 6000               # listener port (uint16)
+show_attributes = true    # emit 24-bit ANSI colour or plain text
+sentinel = 🖵             # UTF-8 delimiter before the payload (defaults to 🖵)
+close_after_response = false  # close sockets immediately after replies
+
+# TYPE macro behaviour
+macro_interkey_frames = 1      # frame delay inserted between expanded characters
+queue_non_frame_commands = true  # queue TYPE even without GET/VIEW
+allow_deferred_frames = true     # allow deferred GET/VIEW replies
+```
+
+The service generates UTF-8 metadata lines prefixed by the sentinel (columns,
+rows, cursor, colour mode, keys currently held) followed by a standalone
+`sentinel + "PAYLOAD"` line and the ANSI frame. Colours are emitted as
+true-colour SGR sequences that match the original DOS palette. When
+`show_attributes=false`, plain CP437 characters are returned instead.
+
+### Protocol
+
+Commands are newline-terminated, case-sensitive verbs. The verbs themselves
+must be uppercase; the server suggests the correct spelling and replies with
+`ERR commands are case-sensitive` if it receives `get`, `type`, and so on.
+
+| Command       | Description |
+|---------------|-------------|
+| `GET`         | Emit one snapshot (metadata + ANSI payload). |
+| `GET SHOWSPC` | Same as `GET`, but spaces render as middle dots. |
+| `TYPE …`      | Enqueue keyboard events, delays, and optional frame capture. |
+| `VIEW`        | Synonym for `GET` (allowed as a trailing token inside `TYPE`). |
+| `STATS`       | Report cumulative request/success/failure counters plus `keys_down`. |
+| `EXIT`        | Request a graceful emulator shutdown. |
+
+### `TYPE` tokens
+
+`TYPE` token parsing is intentionally strict to keep scripts reproducible:
+
+- Tokens are whitespace-separated and case-sensitive. Invalid casing is logged
+  to stderr alongside the expected spelling.
+- Bare key names perform a `PRESS` (down + up). Append `Down` or `Up` to
+  hold/release keys manually (`TYPE ShiftDown P ShiftUp`).
+- Double-quoted strings expand to character-wise typing with automatic
+  `Shift` insertion (for example `TYPE "Peter" VIEW`). Escape quotes with
+  `\"` and backslashes with `\\`.
+- Delay tokens ending in `ms` apply millisecond waits. Tokens ending in
+  `frame` or `frames` wait for presentation ticks processed by the queued
+  scheduler (`TYPE A 3frames B`).
+- Trailing `GET` or `VIEW` requests the post-input frame. Without either token
+  the command replies with `OK`.
+- Literal Enter can be sent as `Enter`, `Return`, or via `\n` inside quotes.
+  The literal backslash key is expressed as `\\` when unquoted.
+- Unrecognised tokens are ignored after a stderr warning so scripts keep
+  running.
+
+### Future enhancements
+
+Work is underway to route every `TYPE` command through an asynchronous queue so
+long macros no longer block the emulation thread before a trailing `VIEW`. The
+queue already powers `<N>frames` delays and inter-key waits; upcoming work will
+flush queued actions from the main poll loop and tighten the round-trip tests.
+
+### Known issues
+
+- On some hosts Git reports spurious modifications to
+  `extras/windows-installer/.gitattributes` and
+  `extras/windows-installer/dosbox_with_console.bat` due to CRLF conversions.
+  The files are byte-identical to HEAD; review Git's autocrlf settings if the
+  noise becomes distracting.
+
+Additional examples and client snippets live in the
 [text-mode server guide](https://www.dosbox-staging.org/getting-started/textmode-server/).
 
 ## Build status

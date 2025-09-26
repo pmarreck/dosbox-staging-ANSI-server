@@ -5,6 +5,11 @@
 
 #include <algorithm>
 #include <cctype>
+#if defined(ENABLE_TEXTMODE_QUEUE_TRACE)
+#include <cstdio>
+#include <cstdarg>
+#include <cstdlib>
+#endif
 #include <iostream>
 #include <sstream>
 #include <string_view>
@@ -16,140 +21,132 @@ namespace {
 
 using KeyMap = std::unordered_map<std::string, KBD_KEYS>;
 
+#if defined(ENABLE_TEXTMODE_QUEUE_TRACE)
+bool trace_enabled()
+{
+	static const bool enabled = [] {
+		const char* flag = std::getenv("TEXTMODE_QUEUE_TRACE");
+		return flag && *flag;
+	}();
+	return enabled;
+}
+
+void trace_log(const char* fmt, ...)
+{
+	if (!trace_enabled()) {
+		return;
+	}
+	std::fprintf(stderr, "[TEXTMODE_QUEUE_TRACE] ");
+	va_list args;
+	va_start(args, fmt);
+	vfprintf(stderr, fmt, args);
+	va_end(args);
+}
+#else
+inline void trace_log(const char*, ...) {}
+#endif
+
 const KeyMap& get_key_map()
 {
 	static const KeyMap map = {
-	        {"ESC", KBD_esc},
-	        {"ESCAPE", KBD_esc},
-	        {"TAB", KBD_tab},
-	        {"BACKSPACE", KBD_backspace},
-	        {"BKSP", KBD_backspace},
-	        {"ENTER", KBD_enter},
-	        {"RETURN", KBD_enter},
-	        {"SPACE", KBD_space},
-	        {"SPACEBAR", KBD_space},
+	        {"Esc", KBD_esc},
+	        {"Escape", KBD_esc},
+	        {"Tab", KBD_tab},
+	        {"Backspace", KBD_backspace},
+	        {"Bksp", KBD_backspace},
+	        {"Enter", KBD_enter},
+	        {"Return", KBD_enter},
+	        {"Space", KBD_space},
+	        {"Spacebar", KBD_space},
 
-	        {"LEFTALT", KBD_leftalt},
-	        {"LALT", KBD_leftalt},
-	        {"ALT", KBD_leftalt},
-	        {"RIGHTALT", KBD_rightalt},
-	        {"RALT", KBD_rightalt},
+	        {"LeftAlt", KBD_leftalt},
+	        {"Alt", KBD_leftalt},
+	        {"RightAlt", KBD_rightalt},
+	        {"LeftCtrl", KBD_leftctrl},
+	        {"Ctrl", KBD_leftctrl},
+	        {"Control", KBD_leftctrl},
+	        {"RightCtrl", KBD_rightctrl},
+	        {"LeftShift", KBD_leftshift},
+	        {"Shift", KBD_leftshift},
+	        {"RightShift", KBD_rightshift},
+	        {"LeftGui", KBD_leftgui},
+	        {"Gui", KBD_leftgui},
+	        {"Win", KBD_leftgui},
+	        {"Windows", KBD_leftgui},
+	        {"RightGui", KBD_rightgui},
+	        {"CapsLock", KBD_capslock},
+	        {"NumLock", KBD_numlock},
+	        {"ScrollLock", KBD_scrolllock},
 
-	        {"LEFTCTRL", KBD_leftctrl},
-	        {"LCTRL", KBD_leftctrl},
-	        {"CTRL", KBD_leftctrl},
-	        {"CONTROL", KBD_leftctrl},
-	        {"RIGHTCTRL", KBD_rightctrl},
-	        {"RCTRL", KBD_rightctrl},
+	        {"Grave", KBD_grave},
+	        {"Backquote", KBD_grave},
+	        {"Backtick", KBD_grave},
+	        {"Minus", KBD_minus},
+	        {"Hyphen", KBD_minus},
+	        {"Equals", KBD_equals},
+	        {"Plus", KBD_equals},
+	        {"Backslash", KBD_backslash},
+	        {"LeftBracket", KBD_leftbracket},
+	        {"LBracket", KBD_leftbracket},
+	        {"OpenBracket", KBD_leftbracket},
+	        {"RightBracket", KBD_rightbracket},
+	        {"RBracket", KBD_rightbracket},
+	        {"CloseBracket", KBD_rightbracket},
+	        {"Semicolon", KBD_semicolon},
+	        {"Colon", KBD_semicolon},
+	        {"Apostrophe", KBD_quote},
+	        {"Quote", KBD_quote},
+	        {"Oem102", KBD_oem102},
+	        {"LessGreater", KBD_oem102},
+	        {"Period", KBD_period},
+	        {"Dot", KBD_period},
+	        {"Comma", KBD_comma},
+	        {"Slash", KBD_slash},
+	        {"ForwardSlash", KBD_slash},
+	        {"Abnt1", KBD_abnt1},
 
-	        {"LEFTSHIFT", KBD_leftshift},
-	        {"LSHIFT", KBD_leftshift},
-	        {"SHIFT", KBD_leftshift},
-	        {"RIGHTSHIFT", KBD_rightshift},
-	        {"RSHIFT", KBD_rightshift},
+	        {"PrintScreen", KBD_printscreen},
+	        {"PrtSc", KBD_printscreen},
+	        {"SysRq", KBD_printscreen},
+	        {"Pause", KBD_pause},
+	        {"Break", KBD_pause},
 
-	        {"LEFTGUI", KBD_leftgui},
-	        {"LGUI", KBD_leftgui},
-	        {"LWIN", KBD_leftgui},
-	        {"GUI", KBD_leftgui},
-	        {"WIN", KBD_leftgui},
-	        {"WINDOWS", KBD_leftgui},
-	        {"RIGHTGUI", KBD_rightgui},
-	        {"RGUI", KBD_rightgui},
-	        {"RWIN", KBD_rightgui},
+	        {"Insert", KBD_insert},
+	        {"Ins", KBD_insert},
+	        {"Delete", KBD_delete},
+	        {"Del", KBD_delete},
+	        {"Home", KBD_home},
+	        {"End", KBD_end},
+	        {"PageUp", KBD_pageup},
+	        {"PgUp", KBD_pageup},
+	        {"PageDown", KBD_pagedown},
+	        {"PgDn", KBD_pagedown},
+	        {"Left", KBD_left},
+	        {"LeftArrow", KBD_left},
+	        {"Up", KBD_up},
+	        {"UpArrow", KBD_up},
+	        {"Down", KBD_down},
+	        {"DownArrow", KBD_down},
+	        {"Right", KBD_right},
+	        {"RightArrow", KBD_right},
 
-	        {"CAPSLOCK", KBD_capslock},
-	        {"CAPS", KBD_capslock},
-	        {"NUMLOCK", KBD_numlock},
-	        {"NUM", KBD_numlock},
-	        {"SCROLLLOCK", KBD_scrolllock},
-	        {"SCROLL", KBD_scrolllock},
-
-	        {"GRAVE", KBD_grave},
-	        {"BACKQUOTE", KBD_grave},
-	        {"BACKTICK", KBD_grave},
-	        {"MINUS", KBD_minus},
-	        {"HYPHEN", KBD_minus},
-	        {"EQUALS", KBD_equals},
-	        {"PLUS", KBD_equals},
-	        {"BACKSLASH", KBD_backslash},
-	        {"BSLASH", KBD_backslash},
-	        {"LEFTBRACKET", KBD_leftbracket},
-	        {"LBRACKET", KBD_leftbracket},
-	        {"OPENBRACKET", KBD_leftbracket},
-	        {"RIGHTBRACKET", KBD_rightbracket},
-	        {"RBRACKET", KBD_rightbracket},
-	        {"CLOSEBRACKET", KBD_rightbracket},
-	        {"SEMICOLON", KBD_semicolon},
-	        {"COLON", KBD_semicolon},
-	        {"APOSTROPHE", KBD_quote},
-	        {"QUOTE", KBD_quote},
-	        {"OEM102", KBD_oem102},
-	        {"LESSGREATER", KBD_oem102},
-	        {"PERIOD", KBD_period},
-	        {"DOT", KBD_period},
-	        {"COMMA", KBD_comma},
-	        {"SLASH", KBD_slash},
-	        {"FORWARDSLASH", KBD_slash},
-	        {"ABNT1", KBD_abnt1},
-
-	        {"PRINTSCREEN", KBD_printscreen},
-	        {"PRTSC", KBD_printscreen},
-	        {"SYSRQ", KBD_printscreen},
-	        {"PAUSE", KBD_pause},
-	        {"BREAK", KBD_pause},
-
-	        {"INSERT", KBD_insert},
-	        {"INS", KBD_insert},
-	        {"DELETE", KBD_delete},
-	        {"DEL", KBD_delete},
-	        {"HOME", KBD_home},
-	        {"END", KBD_end},
-	        {"PAGEUP", KBD_pageup},
-	        {"PGUP", KBD_pageup},
-	        {"PAGEDOWN", KBD_pagedown},
-	        {"PGDN", KBD_pagedown},
-	        {"LEFT", KBD_left},
-	        {"LEFTARROW", KBD_left},
-	        {"UP", KBD_up},
-	        {"UPARROW", KBD_up},
-	        {"DOWN", KBD_down},
-	        {"DOWNARROW", KBD_down},
-	        {"RIGHT", KBD_right},
-	        {"RIGHTARROW", KBD_right},
-
-	        {"KP0", KBD_kp0},
-	        {"NUMPAD0", KBD_kp0},
-	        {"KP1", KBD_kp1},
-	        {"NUMPAD1", KBD_kp1},
-	        {"KP2", KBD_kp2},
-	        {"NUMPAD2", KBD_kp2},
-	        {"KP3", KBD_kp3},
-	        {"NUMPAD3", KBD_kp3},
-	        {"KP4", KBD_kp4},
-	        {"NUMPAD4", KBD_kp4},
-	        {"KP5", KBD_kp5},
-	        {"NUMPAD5", KBD_kp5},
-	        {"KP6", KBD_kp6},
-	        {"NUMPAD6", KBD_kp6},
-	        {"KP7", KBD_kp7},
-	        {"NUMPAD7", KBD_kp7},
-	        {"KP8", KBD_kp8},
-	        {"NUMPAD8", KBD_kp8},
-	        {"KP9", KBD_kp9},
-	        {"NUMPAD9", KBD_kp9},
-	        {"KPDIVIDE", KBD_kpdivide},
-	        {"NUMPADDIVIDE", KBD_kpdivide},
-	        {"KPMULTIPLY", KBD_kpmultiply},
-	        {"NUMPADMULTIPLY", KBD_kpmultiply},
-	        {"KPMINUS", KBD_kpminus},
-	        {"NUMPADMINUS", KBD_kpminus},
-	        {"KPPLUS", KBD_kpplus},
-	        {"NUMPADPLUS", KBD_kpplus},
-	        {"KPENTER", KBD_kpenter},
-	        {"NUMPADENTER", KBD_kpenter},
-	        {"KPPERIOD", KBD_kpperiod},
-	        {"NUMPADDECIMAL", KBD_kpperiod},
+	        {"Numpad0", KBD_kp0},
+	        {"Numpad1", KBD_kp1},
+	        {"Numpad2", KBD_kp2},
+	        {"Numpad3", KBD_kp3},
+	        {"Numpad4", KBD_kp4},
+	        {"Numpad5", KBD_kp5},
+	        {"Numpad6", KBD_kp6},
+	        {"Numpad7", KBD_kp7},
+	        {"Numpad8", KBD_kp8},
+	        {"Numpad9", KBD_kp9},
+	        {"NumpadDivide", KBD_kpdivide},
+	        {"NumpadMultiply", KBD_kpmultiply},
+	        {"NumpadMinus", KBD_kpminus},
+	        {"NumpadPlus", KBD_kpplus},
+	        {"NumpadEnter", KBD_kpenter},
+	        {"NumpadPeriod", KBD_kpperiod},
+	        {"NumpadDecimal", KBD_kpperiod},
 	};
 	return map;
 }
@@ -224,6 +221,74 @@ CommandResponse error_response(const std::string& message)
 
 } // namespace
 
+std::string format_display_name(const std::string& token)
+{
+	std::string upper(token);
+	std::transform(upper.begin(),
+	               upper.end(),
+	               upper.begin(),
+	               [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+	if (upper == "SHIFT" || upper == "LSHIFT" || upper == "RSHIFT") {
+		return "Shift";
+	}
+	if (upper == "CTRL" || upper == "LCTRL" || upper == "RCTRL" ||
+	    upper == "CONTROL") {
+		return "Ctrl";
+	}
+	if (upper == "ALT" || upper == "LALT" || upper == "RALT" ||
+	    upper == "LEFTALT" || upper == "RIGHTALT") {
+		return "Alt";
+	}
+	if (upper == "CAPS" || upper == "CAPSLOCK") {
+		return "CapsLock";
+	}
+	if (upper.rfind("NUMPAD", 0) == 0) {
+		std::string rest = upper.substr(6);
+		for (auto& ch : rest) {
+			ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+		}
+		return "NumPad" + rest;
+	}
+	if (upper.rfind("KP", 0) == 0) {
+		std::string rest = upper.substr(2);
+		for (auto& ch : rest) {
+			ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+		}
+		return "NumPad" + rest;
+	}
+	if (upper.size() > 1 && upper.front() == 'F' &&
+	    std::all_of(upper.begin() + 1, upper.end(), [](unsigned char c) {
+		    return std::isdigit(c) != 0;
+	    })) {
+		return "F" + upper.substr(1);
+	}
+	if (upper.size() == 1) {
+		return std::string(1, upper.front());
+	}
+
+	// Default: Title-case the token
+	std::string result;
+	result.reserve(upper.size());
+	bool new_word = true;
+	for (const auto ch : upper) {
+		if (!std::isalnum(static_cast<unsigned char>(ch))) {
+			result.push_back(ch);
+			new_word = true;
+			continue;
+		}
+		if (new_word) {
+			result.push_back(static_cast<char>(std::toupper(ch)));
+			new_word = false;
+		} else {
+			result.push_back(static_cast<char>(std::tolower(ch)));
+		}
+		if (std::isdigit(static_cast<unsigned char>(ch))) {
+			new_word = true;
+		}
+	}
+	return result;
+}
+
 KeyboardCommandProcessor::KeyboardCommandProcessor(KeySink sink)
         : m_sink(std::move(sink)),
           m_pressed(),
@@ -237,6 +302,7 @@ CommandResponse KeyboardCommandProcessor::HandleCommand(const std::string& raw_c
 {
 	const auto trimmed = Trim(raw_command);
 	if (trimmed.empty()) {
+		trace_log("kbd command empty raw='%s'\n", raw_command.c_str());
 		return error_response("empty command");
 	}
 
@@ -246,6 +312,7 @@ CommandResponse KeyboardCommandProcessor::HandleCommand(const std::string& raw_c
 	const auto args = (space_pos == std::string::npos)
 	                          ? std::string()
 	                          : Trim(trimmed.substr(space_pos + 1));
+	trace_log("kbd command verb=%s args='%s'\n", verb_upper.c_str(), args.c_str());
 
 	++m_commands;
 
@@ -269,37 +336,47 @@ CommandResponse KeyboardCommandProcessor::HandleCommand(const std::string& raw_c
 	} else {
 		++m_failures;
 	}
+	trace_log("kbd command result ok=%s payload='%s'\n",
+	          response.ok ? "yes" : "no",
+	          response.payload.c_str());
 	return response;
 }
 
 void KeyboardCommandProcessor::Reset()
 {
-	for (const auto key : m_pressed) {
-		m_sink(key, false);
+	for (const auto& entry : m_pressed) {
+		trace_log("kbd reset release key=%d\n", static_cast<int>(entry.first));
+		m_sink(entry.first, false);
 	}
 	m_pressed.clear();
 }
 
 CommandResponse KeyboardCommandProcessor::HandlePress(const std::string& args)
 {
+	trace_log("kbd press args='%s'\n", args.c_str());
 	std::string remainder;
 	const auto token = FirstToken(args, remainder);
 	if (!token) {
+		trace_log("kbd press error missing key\n");
 		return error_response("missing key");
 	}
 	if (!remainder.empty()) {
+		trace_log("kbd press error unexpected args='%s'\n", remainder.c_str());
 		return error_response("unexpected arguments");
 	}
 
 	const auto key = ParseKeyName(*token);
 	if (!key) {
+		trace_log("kbd press error unknown token='%s'\n", token->c_str());
 		return error_response("unknown key");
 	}
 
 	if (m_pressed.contains(*key)) {
+		trace_log("kbd press error already down key=%d\n", static_cast<int>(*key));
 		return error_response("key already down");
 	}
 
+	trace_log("kbd press sink key=%d down/up\n", static_cast<int>(*key));
 	m_sink(*key, true);
 	m_sink(*key, false);
 	return ok_response();
@@ -307,50 +384,62 @@ CommandResponse KeyboardCommandProcessor::HandlePress(const std::string& args)
 
 CommandResponse KeyboardCommandProcessor::HandleDown(const std::string& args)
 {
+	trace_log("kbd down args='%s'\n", args.c_str());
 	std::string remainder;
 	const auto token = FirstToken(args, remainder);
 	if (!token) {
+		trace_log("kbd down error missing key\n");
 		return error_response("missing key");
 	}
 	if (!remainder.empty()) {
+		trace_log("kbd down error unexpected args='%s'\n", remainder.c_str());
 		return error_response("unexpected arguments");
 	}
 
 	const auto key = ParseKeyName(*token);
 	if (!key) {
+		trace_log("kbd down error unknown token='%s'\n", token->c_str());
 		return error_response("unknown key");
 	}
 
 	if (m_pressed.contains(*key)) {
+		trace_log("kbd down error already down key=%d\n", static_cast<int>(*key));
 		return error_response("key already down");
 	}
 
+	trace_log("kbd down sink key=%d\n", static_cast<int>(*key));
 	m_sink(*key, true);
-	m_pressed.insert(*key);
+	m_pressed[*key] = format_display_name(*token);
 	return ok_response();
 }
 
 CommandResponse KeyboardCommandProcessor::HandleUp(const std::string& args)
 {
+	trace_log("kbd up args='%s'\n", args.c_str());
 	std::string remainder;
 	const auto token = FirstToken(args, remainder);
 	if (!token) {
+		trace_log("kbd up error missing key\n");
 		return error_response("missing key");
 	}
 	if (!remainder.empty()) {
+		trace_log("kbd up error unexpected args='%s'\n", remainder.c_str());
 		return error_response("unexpected arguments");
 	}
 
 	const auto key = ParseKeyName(*token);
 	if (!key) {
+		trace_log("kbd up error unknown token='%s'\n", token->c_str());
 		return error_response("unknown key");
 	}
 
 	const auto it = m_pressed.find(*key);
 	if (it == m_pressed.end()) {
+		trace_log("kbd up error key not down key=%d\n", static_cast<int>(*key));
 		return error_response("key not down");
 	}
 
+	trace_log("kbd up sink key=%d\n", static_cast<int>(*key));
 	m_sink(*key, false);
 	m_pressed.erase(it);
 	return ok_response();
@@ -373,20 +462,19 @@ CommandResponse KeyboardCommandProcessor::HandleStats() const
 
 std::optional<KBD_KEYS> KeyboardCommandProcessor::ParseKeyName(const std::string& name)
 {
-	const auto upper = ToUpper(name);
-	if (upper.empty()) {
+	if (name.empty()) {
 		return std::nullopt;
 	}
 
-	if (upper.size() == 1) {
-		return map_single_character(upper[0]);
+	if (name.size() == 1) {
+		return map_single_character(name.front());
 	}
 
-	if (const auto f_key = map_f_key(upper); f_key) {
+	if (const auto f_key = map_f_key(name); f_key) {
 		return f_key;
 	}
 
-	if (const auto it = get_key_map().find(upper); it != get_key_map().end()) {
+	if (const auto it = get_key_map().find(name); it != get_key_map().end()) {
 		return it->second;
 	}
 
@@ -398,11 +486,11 @@ const std::vector<std::string>& KeyboardCommandProcessor::GetKeyNames()
 	static const std::vector<std::string> names = [] {
 		std::vector<std::string> result;
 		const auto& map = get_key_map();
-		result.reserve(map.size() + 26 + 10 + 24);
+		result.reserve(map.size() + 26 + 10 + 12);
 		for (const auto& entry : map) {
 			result.push_back(entry.first);
 		}
-		for (int f = 1; f <= 24; ++f) {
+		for (int f = 1; f <= 12; ++f) {
 			result.push_back("F" + std::to_string(f));
 		}
 		for (char c = 'A'; c <= 'Z'; ++c) {
@@ -461,6 +549,17 @@ std::optional<std::string> KeyboardCommandProcessor::FirstToken(const std::strin
 
 	remainder_out = Trim(trimmed.substr(pos + 1));
 	return trimmed.substr(0, pos);
+}
+
+std::vector<std::string> KeyboardCommandProcessor::ActiveKeys() const
+{
+	std::vector<std::string> keys;
+	keys.reserve(m_pressed.size());
+	for (const auto& entry : m_pressed) {
+		keys.push_back(entry.second);
+	}
+	std::sort(keys.begin(), keys.end());
+	return keys;
 }
 
 } // namespace textmode

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+build_dir="${project_root}/build/release"
+
+if [[ ! -f "${build_dir}/meson-info/meson-info.json" ]]; then
+  nix develop -c meson setup "${build_dir}" --buildtype=release --wrap-mode=nofallback -Duse_slirp=false
+fi
+
+nix develop -c meson compile -C "${build_dir}"
+
+printf '%s\n' "${build_dir}/dosbox"

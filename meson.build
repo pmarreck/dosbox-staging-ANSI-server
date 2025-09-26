@@ -1234,6 +1234,7 @@ dosbox_sources = [
     'src/textmode_server/keyboard_processor.cpp',
     'src/textmode_server/server.cpp',
     'src/textmode_server/command_processor.cpp',
+    'src/textmode_server/queued_type_action_sink.cpp',
 ]
 
 # Add Windows resources file if building on Windows
@@ -1262,7 +1263,8 @@ libdosbox = static_library(
      'src/textmode_server/service.cpp',
      'src/textmode_server/keyboard_processor.cpp',
      'src/textmode_server/server.cpp',
-     'src/textmode_server/command_processor.cpp'],
+     'src/textmode_server/command_processor.cpp',
+     'src/textmode_server/queued_type_action_sink.cpp'],
     include_directories: incdir,
     dependencies: internal_deps + third_party_deps,
 )

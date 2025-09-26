@@ -4,6 +4,7 @@
 #include "textmode_server/encoder.h"
 
 #include <array>
+#include <cstdint>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -17,40 +18,30 @@ namespace {
 
 constexpr uint16_t CodePage437 = 437;
 
-constexpr std::array<int, 16> FgColorCodes = {
-        30, // black
-        34, // blue
-        32, // green
-        36, // cyan
-        31, // red
-        35, // magenta
-        33, // brown/yellow
-        37, // light grey
-        90, // dark grey
-        94, // light blue
-        92, // light green
-        96, // light cyan
-        91, // light red
-        95, // light magenta
-        93, // yellow
-        97, // white
+struct Rgb {
+	uint8_t r;
+	uint8_t g;
+	uint8_t b;
 };
 
-constexpr std::array<bool, 16> FgIsBright = {
-        false, false, false, false, false, false, false, false,
-        true,  true,  true,  true,  true,  true,  true,  true,
-};
-
-constexpr std::array<int, 8> BgColorCodes = {
-        40, // black
-        44, // blue
-        42, // green
-        46, // cyan
-        41, // red
-        45, // magenta
-        43, // brown/yellow
-        47, // light grey
-};
+constexpr std::array<Rgb, 16> DosPalette = {{
+		{0x00, 0x00, 0x00}, // black
+		{0x00, 0x00, 0xAA}, // blue
+		{0x00, 0xAA, 0x00}, // green
+		{0x00, 0xAA, 0xAA}, // cyan
+		{0xAA, 0x00, 0x00}, // red
+		{0xAA, 0x00, 0xAA}, // magenta
+		{0xAA, 0x55, 0x00}, // brown/yellow
+		{0xAA, 0xAA, 0xAA}, // light grey
+		{0x55, 0x55, 0x55}, // dark grey
+		{0x55, 0x55, 0xFF}, // light blue
+		{0x55, 0xFF, 0x55}, // light green
+		{0x55, 0xFF, 0xFF}, // light cyan
+		{0xFF, 0x55, 0x55}, // light red
+		{0xFF, 0x55, 0xFF}, // light magenta
+		{0xFF, 0xFF, 0x55}, // yellow
+		{0xFF, 0xFF, 0xFF}, // white
+}};
 
 std::string to_utf8_char(const uint8_t dos_char)
 {
@@ -63,31 +54,18 @@ std::string to_utf8_char(const uint8_t dos_char)
 
 std::string build_sgr(uint8_t attribute)
 {
-	std::vector<int> codes;
-	codes.reserve(4);
-	codes.push_back(0);
-
-	const auto fg_index = attribute & 0x0f;
-	if (FgIsBright[fg_index]) {
-		codes.push_back(1);
-	}
-	codes.push_back(FgColorCodes[fg_index]);
-
-	const auto bg_index = static_cast<size_t>((attribute >> 4) & 0x07);
-	codes.push_back(BgColorCodes[bg_index]);
-
-	if (attribute & 0x80) {
-		codes.push_back(5);
-	}
+	const auto& fg = DosPalette[attribute & 0x0f];
+	const auto& bg = DosPalette[(attribute >> 4) & 0x07];
 
 	std::ostringstream oss;
-	oss << "\x1b[";
-	for (size_t i = 0; i < codes.size(); ++i) {
-		if (i > 0) {
-			oss << ';';
-		}
-		oss << codes[i];
+	oss << "\x1b[0";
+	if (attribute & 0x80) {
+		oss << ";5";
 	}
+	oss << ";38;2;" << static_cast<int>(fg.r) << ';'
+	    << static_cast<int>(fg.g) << ';' << static_cast<int>(fg.b);
+	oss << ";48;2;" << static_cast<int>(bg.r) << ';'
+	    << static_cast<int>(bg.g) << ';' << static_cast<int>(bg.b);
 	oss << 'm';
 	return oss.str();
 }
@@ -113,10 +91,18 @@ std::string BuildAnsiFrame(const Snapshot& snapshot, const EncodingOptions& opti
 		    << snapshot.cursor.column << " visible="
 		    << (snapshot.cursor.visible ? 1 : 0) << '\n';
 	} else {
-		oss << sentinel << "META cursor=disabled\n";
+	oss << sentinel << "META cursor=disabled\n";
 	}
 	oss << sentinel << "META attributes="
 	    << (options.show_attributes ? "show" : "hide") << '\n';
+	oss << sentinel << "META keys_down=";
+	for (size_t i = 0; i < options.keys_down.size(); ++i) {
+		if (i > 0) {
+			oss << ',';
+		}
+		oss << options.keys_down[i];
+	}
+	oss << '\n';
 	oss << sentinel << "PAYLOAD\n";
 
 	const auto cols = snapshot.columns;

@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 #include <utility>
 
 #include "textmode_server/snapshot.h"
@@ -17,8 +18,9 @@ struct ServiceConfig {
 	uint16_t port        = 6000;
 	bool show_attributes = true;
 	std::string sentinel = {};
-	bool keyboard_enable = false;
-	uint16_t keyboard_port = 6001;
+	bool close_after_response = false;
+	uint32_t macro_interkey_frames = 1;
+	uint32_t inter_token_frame_delay = 1;
 };
 
 struct ServiceResult {
@@ -29,12 +31,14 @@ struct ServiceResult {
 
 class TextModeService {
 public:
-	explicit TextModeService(ServiceConfig config) : m_config(std::move(config)) {}
+	TextModeService(ServiceConfig config, std::vector<std::string> keys_down = {})
+	        : m_config(std::move(config)), m_keys_down(std::move(keys_down)) {}
 
 	ServiceResult GetFrame() const;
 
 private:
 	ServiceConfig m_config;
+	std::vector<std::string> m_keys_down;
 };
 
 } // namespace textmode

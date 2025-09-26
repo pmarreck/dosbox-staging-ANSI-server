@@ -3,6 +3,7 @@
 
 #include "textmode_server/service.h"
 
+#include <algorithm>
 #include <utility>
 
 #include "hardware/video/vga.h"
@@ -48,6 +49,8 @@ ServiceResult TextModeService::GetFrame() const
 	EncodingOptions encoding{};
 	encoding.show_attributes = m_config.show_attributes;
 	encoding.sentinel        = m_config.sentinel;
+	encoding.keys_down       = m_keys_down;
+	std::sort(encoding.keys_down.begin(), encoding.keys_down.end());
 
 	return Success(BuildAnsiFrame(*snapshot, encoding));
 }

@@ -16,7 +16,6 @@
 #include <fstream>
 #include <optional>
 #include <spawn.h>
-#include <map>
 #include <sstream>
 #include <string_view>
 #include <string>
@@ -31,7 +30,6 @@ extern char** environ;
 namespace {
 
 constexpr uint16_t kTextPort     = 6200;
-constexpr uint16_t kKeyboardPort = 6201;
 
 struct SocketGuard {
 	explicit SocketGuard(TCPsocket sock = nullptr) : socket(sock) {}
@@ -118,7 +116,7 @@ private:
 	std::vector<char*> argv = {};
 };
 
-void WriteConfig(const std::filesystem::path& path)
+void WriteConfig(const std::filesystem::path& path, bool close_after_response = false)
 {
 	std::ofstream cfg(path);
 	ASSERT_TRUE(cfg.is_open());
@@ -134,8 +132,9 @@ void WriteConfig(const std::filesystem::path& path)
 	cfg << "port=" << kTextPort << "\n";
 	cfg << "show_attributes=false\n";
 	cfg << "sentinel=*\n";
-	cfg << "keyboard_enable=true\n";
-	cfg << "keyboard_port=" << kKeyboardPort << "\n";
+	if (close_after_response) {
+		cfg << "close_after_response=true\n";
+	}
 	cfg << "[autoexec]\n";
 	cfg << "@echo off\n";
 	cfg << "cls\n";
@@ -230,6 +229,27 @@ std::string ReceiveResponse(TCPsocket socket,
 	return buffer;
 }
 
+bool ResponseContainsOnlyOk(const std::string& response)
+{
+	if (response.empty()) {
+		return false;
+	}
+
+	std::istringstream stream(response);
+	std::string line;
+	int ok_lines = 0;
+	while (std::getline(stream, line)) {
+		if (line.empty()) {
+			continue;
+		}
+		if (line != "OK") {
+			return false;
+		}
+		++ok_lines;
+	}
+	return ok_lines > 0;
+}
+
 bool EnsureSend(SocketGuard& guard, const std::string& payload)
 {
 	if (guard.socket && SendAll(guard.socket, payload)) {
@@ -280,6 +300,20 @@ std::string StripAnsiAndNull(const std::string& text)
 	}
 
 	return result;
+}
+
+std::string SendCommandAndReceive(const uint16_t port,
+                                  const std::string& command,
+                                  const std::chrono::milliseconds timeout)
+{
+	SocketGuard socket(WaitForConnection(port, std::chrono::seconds(5)));
+	if (!socket.socket) {
+		return {};
+	}
+	if (!SendAll(socket.socket, command)) {
+		return {};
+	}
+	return ReceiveResponse(socket.socket, timeout);
 }
 
 struct ParsedFrame {
@@ -373,34 +407,6 @@ std::optional<std::pair<int, int>> ExtractCursor(const ParsedFrame& frame)
 	}
 }
 
-std::optional<std::map<std::string, int>> ParseStatsLine(const std::string& stats)
-{
-	std::map<std::string, int> values;
-	std::istringstream stream(stats);
-	std::string token;
-	while (stream >> token) {
-		if (!token.empty() && token.back() == '\n') {
-			token.pop_back();
-		}
-		const auto eq_pos = token.find('=');
-		if (eq_pos == std::string::npos) {
-			continue;
-		}
-		const auto key   = token.substr(0, eq_pos);
-		const auto value = token.substr(eq_pos + 1);
-		try {
-			values[key] = std::stoi(value);
-		} catch (const std::exception&) {
-			return std::nullopt;
-		}
-	}
-
-	if (values.empty()) {
-		return std::nullopt;
-	}
-	return values;
-}
-
 } // namespace
 
 TEST(TextModeRoundTripTest, EchoesInjectedKeys)
@@ -439,9 +445,6 @@ TEST(TextModeRoundTripTest, EchoesInjectedKeys)
 	SocketGuard text_socket(WaitForConnection(kTextPort, std::chrono::seconds(5)));
 	ASSERT_NE(text_socket.socket, nullptr) << "Failed to connect to frame server";
 
-	SocketGuard keyboard_socket(WaitForConnection(kKeyboardPort, std::chrono::seconds(5)));
-	ASSERT_NE(keyboard_socket.socket, nullptr) << "Failed to connect to keyboard server";
-
 	constexpr int kMaxFrameAttempts = 60;
 	std::optional<std::pair<int, int>> initial_cursor;
 	std::string last_frame;
@@ -477,93 +480,20 @@ TEST(TextModeRoundTripTest, EchoesInjectedKeys)
 	ASSERT_TRUE(prompt_seen) << "Did not observe command prompt\n" << last_frame;
 	ASSERT_TRUE(initial_cursor.has_value()) << "Missing cursor metadata before typing";
 
-	ASSERT_TRUE(SendAll(keyboard_socket.socket, std::string("STATS\n")));
-	const auto stats_baseline_str =
-	        ReceiveResponse(keyboard_socket.socket, std::chrono::milliseconds(500));
-	std::ofstream(temp_dir / "stats_baseline.txt") << stats_baseline_str;
-	const auto stats_baseline = ParseStatsLine(stats_baseline_str);
-	ASSERT_TRUE(stats_baseline.has_value()) << "Unable to parse baseline stats\n"
-	                                       << stats_baseline_str;
-	const auto get_value = [](const std::map<std::string, int>& values,
-	                         const std::string& key) {
-		if (const auto it = values.find(key); it != values.end()) {
-			return it->second;
-		}
-		return 0;
-	};
-	const int baseline_success = get_value(*stats_baseline, "success");
-	const int baseline_failures = get_value(*stats_baseline, "failures");
+	constexpr std::string_view text_to_type = "h";
+	const std::string type_command = std::string("TYPE \"") + std::string(text_to_type) + "\"\n";
+	ASSERT_TRUE(EnsureSend(text_socket, type_command));
+	(void)ReceiveResponse(text_socket.socket, std::chrono::milliseconds(500));
 
-	constexpr std::string_view text_to_type = "hello";
-	for (const char ch : text_to_type) {
-		std::string command = "APPLY keys=";
-		command.push_back(ch);
-		command += "\n";
-		ASSERT_TRUE(EnsureSend(text_socket, command));
-		(void)ReceiveResponse(text_socket.socket, std::chrono::milliseconds(500));
-	}
+	ASSERT_TRUE(EnsureSend(text_socket, std::string("TYPE ShiftDown\n")));
+	const auto shift_down_ack =
+	        ReceiveResponse(text_socket.socket, std::chrono::milliseconds(500));
+	EXPECT_TRUE(ResponseContainsOnlyOk(shift_down_ack)) << shift_down_ack;
 
-	ASSERT_TRUE(SendAll(keyboard_socket.socket, std::string("STATS\n")));
-	const auto stats_after_apply =
-	        ReceiveResponse(keyboard_socket.socket, std::chrono::milliseconds(500));
-	std::ofstream(temp_dir / "stats_after_apply.txt") << stats_after_apply;
-	const auto stats_after = ParseStatsLine(stats_after_apply);
-	ASSERT_TRUE(stats_after.has_value()) << "Unable to parse stats after typing\n"
-	                                   << stats_after_apply;
-	const int success_after  = get_value(*stats_after, "success");
-	const int failures_after = get_value(*stats_after, "failures");
-	EXPECT_GE(success_after - baseline_success,
-	          static_cast<int>(text_to_type.size()));
-	EXPECT_EQ(failures_after, baseline_failures);
-	std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-	const int baseline_row = initial_cursor->first;
-	const int baseline_col = initial_cursor->second;
-	const int expected_col = baseline_col + static_cast<int>(text_to_type.size());
-	bool text_rendered     = false;
-	bool cursor_advanced   = false;
-
-	for (int attempt = 0; attempt < kMaxFrameAttempts; ++attempt) {
-		if (!EnsureSend(text_socket, std::string("GET\n"))) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(100));
-			continue;
-		}
-		last_frame = ReceiveResponse(text_socket.socket, std::chrono::milliseconds(500));
-		if (last_frame.empty()) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(100));
-			continue;
-		}
-
-		const auto parsed = ParseFrame(last_frame);
-		if (parsed) {
-			const std::string text_raw(text_to_type);
-			std::string text_upper(text_to_type);
-			std::transform(text_upper.begin(), text_upper.end(), text_upper.begin(), [](unsigned char ch) {
-				return static_cast<char>(std::toupper(ch));
-			});
-
-			if (const auto cursor = ExtractCursor(*parsed)) {
-				if (cursor->first > baseline_row ||
-				    (cursor->first == baseline_row && cursor->second >= expected_col)) {
-					cursor_advanced = true;
-				}
-			}
-			const auto plain_hit = parsed->payload_plain.find(text_to_type) != std::string::npos;
-			const auto raw_hit   = parsed->payload_raw.find(text_raw) != std::string::npos;
-			const auto raw_upper = parsed->payload_raw.find(text_upper) != std::string::npos;
-			if (plain_hit || raw_hit || raw_upper) {
-				text_rendered = true;
-			}
-		}
-
-		if (cursor_advanced || text_rendered) {
-			break;
-		}
-		std::this_thread::sleep_for(std::chrono::milliseconds(100));
-	}
-
-	EXPECT_TRUE(cursor_advanced || text_rendered)
-	        << "Keyboard input not reflected on screen\n" << last_frame;
+	ASSERT_TRUE(EnsureSend(text_socket, std::string("TYPE ShiftUp\n")));
+	const auto shift_up_ack =
+	        ReceiveResponse(text_socket.socket, std::chrono::milliseconds(500));
+	EXPECT_TRUE(ResponseContainsOnlyOk(shift_up_ack)) << shift_up_ack;
 
 	ASSERT_TRUE(EnsureSend(text_socket, "EXIT\n"));
 	std::string exit_ack;
@@ -585,6 +515,95 @@ TEST(TextModeRoundTripTest, EchoesInjectedKeys)
 	}
 
 	// std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST(TextModeRoundTripTest, CloseAfterResponseHandlesMultipleCommands)
+{
+	if (SDLNet_Init() != 0) {
+		FAIL() << "SDL_net initialisation failed";
+	}
+	struct NetCleanup {
+		~NetCleanup() { SDLNet_Quit(); }
+	} net_cleanup;
+
+	setenv("SDL_VIDEODRIVER", "dummy", 1);
+	setenv("SDL_AUDIODRIVER", "dummy", 1);
+
+	const auto temp_dir = std::filesystem::temp_directory_path() /
+	                     ("dosbox-roundtrip-" + std::to_string(getpid()) + "-" +
+	                      std::to_string(std::chrono::steady_clock::now()
+	                                               .time_since_epoch()
+	                                               .count()));
+	std::error_code ec;
+	std::filesystem::create_directories(temp_dir, ec);
+	ASSERT_FALSE(ec) << ec.message();
+
+	const auto config_path = temp_dir / "roundtrip.conf";
+	WriteConfig(config_path, true);
+
+	const auto dosbox_path = FindDosboxExecutable();
+	ASSERT_FALSE(dosbox_path.empty()) << "Unable to locate dosbox executable";
+
+	std::vector<std::string> args = {
+	        dosbox_path.string(), "-conf", config_path.string(), "-noconsole"};
+
+	PosixProcess process(args);
+
+	constexpr int kMaxFrameAttempts = 60;
+	bool prompt_seen = false;
+	std::string last_frame;
+
+	for (int attempt = 0; attempt < kMaxFrameAttempts && !prompt_seen; ++attempt) {
+		last_frame = SendCommandAndReceive(kTextPort, "GET\n", std::chrono::milliseconds(500));
+		if (last_frame.empty()) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			continue;
+		}
+		const auto parsed = ParseFrame(last_frame);
+		if (!parsed) {
+			continue;
+		}
+		const bool has_prompt = parsed->payload_plain.find("Z:\\>") != std::string::npos;
+		const bool has_banner =
+		        parsed->payload_plain.find("TEXTMODE ROUNDTRIP READY") != std::string::npos;
+		if (has_prompt && has_banner) {
+			prompt_seen = true;
+		}
+	}
+
+	ASSERT_TRUE(prompt_seen) << "Did not observe command prompt\n" << last_frame;
+
+const auto type_resp = SendCommandAndReceive(
+        kTextPort, "TYPE \"REGIS\" 200ms\n", std::chrono::milliseconds(500));
+	EXPECT_EQ(type_resp, "OK\n");
+
+	std::string view_frame;
+	bool found_text = false;
+	for (int attempt = 0; attempt < kMaxFrameAttempts && !found_text; ++attempt) {
+		view_frame =
+		        SendCommandAndReceive(kTextPort, "GET\n", std::chrono::milliseconds(500));
+		const auto parsed_view = ParseFrame(view_frame);
+		if (!parsed_view) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			continue;
+		}
+		if (parsed_view->payload_plain.find("REGIS") != std::string::npos) {
+			found_text = true;
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
+	EXPECT_TRUE(found_text) << "Frame did not include typed text\n" << view_frame;
+
+	const auto exit_resp =
+	        SendCommandAndReceive(kTextPort, "EXIT\n", std::chrono::milliseconds(500));
+	EXPECT_NE(exit_resp.find("OK\n"), std::string::npos);
+
+	const int status = process.WaitForExit(std::chrono::seconds(10));
+	EXPECT_TRUE(WIFEXITED(status)) << "dosbox did not exit cleanly";
+	if (WIFEXITED(status)) {
+		EXPECT_EQ(WEXITSTATUS(status), 0);
+	}
 }
 
 #else

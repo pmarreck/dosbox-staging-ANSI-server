@@ -13,7 +13,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_set>
+#include <unordered_map>
 #include <vector>
 
 namespace textmode {
@@ -26,8 +26,9 @@ public:
 
 	CommandResponse HandleCommand(const std::string& command) override;
 	void Reset();
-	static std::optional<KBD_KEYS> ParseKeyName(const std::string& name);
- 	static const std::vector<std::string>& GetKeyNames();
+		static std::optional<KBD_KEYS> ParseKeyName(const std::string& name);
+	 	static const std::vector<std::string>& GetKeyNames();
+		std::vector<std::string> ActiveKeys() const;
 
 private:
 	CommandResponse HandlePress(const std::string& args);
@@ -41,8 +42,8 @@ private:
 	static std::optional<std::string> FirstToken(const std::string& args,
 	                                             std::string& remainder_out);
 
-	KeySink m_sink;
-	std::unordered_set<KBD_KEYS> m_pressed;
+		KeySink m_sink;
+		std::unordered_map<KBD_KEYS, std::string> m_pressed;
 	uint64_t m_commands = 0;
 	uint64_t m_success  = 0;
 	uint64_t m_failures = 0;

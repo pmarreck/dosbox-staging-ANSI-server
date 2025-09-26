@@ -65,6 +65,7 @@ protected:
 		       "*META rows=1\n"
 		       "*META cursor=disabled\n"
 		       "*META attributes=hide\n"
+		       "*META keys_down=\n"
 		       "*PAYLOAD\n"
 		       "EF\n";
 	}

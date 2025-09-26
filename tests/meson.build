@@ -108,6 +108,7 @@ unit_tests = [
     {'name': 'textmode_service', 'deps': [dosbox_dep], 'extra_cpp': []},
     {'name': 'textmode_command_processor', 'deps': [dosbox_dep], 'extra_cpp': []},
     {'name': 'textmode_keyboard_processor', 'deps': [dosbox_dep], 'extra_cpp': []},
+    {'name': 'textmode_type_queue', 'deps': [dosbox_dep], 'extra_cpp': []},
     {'name': 'textmode_server_tcp', 'deps': [dosbox_dep], 'extra_cpp': []},
     {'name': 'textmode_server_api', 'deps': [dosbox_dep], 'extra_cpp': []},
     {'name': 'textmode_roundtrip',
