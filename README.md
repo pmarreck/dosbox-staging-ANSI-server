@@ -94,10 +94,11 @@ must be uppercase; the server suggests the correct spelling and replies with
 
 ### Future enhancements
 
-Work is underway to route every `TYPE` command through an asynchronous queue so
-long macros no longer block the emulation thread before a trailing `VIEW`. The
-queue already powers `<N>frames` delays and inter-key waits; upcoming work will
-flush queued actions from the main poll loop and tighten the round-trip tests.
+`TYPE` requests already flow through an asynchronous queue that spaces key
+events and honours `<N>frames` waits. Follow-on ideas include exposing queue
+telemetry over `STATS`, making the inter-key delay user-configurable from the
+config file, and packaging scripted client examples for common automation
+setups.
 
 ### Known issues
 
