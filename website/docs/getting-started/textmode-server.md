@@ -16,6 +16,7 @@ port = 6200              # default: 6000
 show_attributes = true   # emit ANSI colour when true, plain text when false
 sentinel = 🖵            # UTF-8 marker separating metadata from payload
 close_after_response = false  # close TCP socket after each reply when true
+auth_token = ${DOSBOX_ANSI_AUTH_TOKEN}  # optional shared secret required by AUTH
 ```
 
 Commands are newline-terminated and case-sensitive; verbs must be uppercase or
@@ -30,6 +31,7 @@ exposes the following protocol commands:
 | `TYPE …`           | Sends key input to the guest. Add `GET` or `VIEW` at the end to fetch the resulting frame. |
 | `STATS`            | Reports cumulative request, success, and failure counts. |
 | `EXIT`             | Requests a clean emulator shutdown (`OK` is returned once accepted). |
+| `AUTH token`       | Authenticates the session when an auth token is configured. |
 
 ### `TYPE` helper
 
@@ -104,3 +106,7 @@ returned when `show_attributes=false`.
   `macro_interkey_frames` configuration option defer keystrokes until the
   emulator renders another frame, making inline `VIEW` snapshots more
   reliable.
+- Authentication is optional. Set `auth_token` (or the
+  `DOSBOX_ANSI_AUTH_TOKEN` environment variable) to require clients to start
+  with `AUTH <token>`. A failed attempt closes the socket; success returns
+  `Auth OK` and unlocks other verbs.

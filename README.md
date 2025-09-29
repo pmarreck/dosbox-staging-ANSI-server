@@ -43,6 +43,7 @@ port = 6000               # listener port (uint16)
 show_attributes = true    # emit 24-bit ANSI colour or plain text
 sentinel = 🖵             # UTF-8 delimiter before the payload (defaults to 🖵)
 close_after_response = false  # close sockets immediately after replies
+auth_token = ${DOSBOX_ANSI_AUTH_TOKEN}  # optional shared secret required by AUTH
 
 # TYPE macro behaviour
 macro_interkey_frames = 1      # frame delay inserted between expanded characters
@@ -70,6 +71,7 @@ must be uppercase; the server suggests the correct spelling and replies with
 | `VIEW`        | Synonym for `GET` (allowed as a trailing token inside `TYPE`). |
 | `STATS`       | Report cumulative request/success/failure counters plus `keys_down`. |
 | `EXIT`        | Request a graceful emulator shutdown. |
+| `AUTH token`  | Authenticate when `auth_token`/`DOSBOX_ANSI_AUTH_TOKEN` is set. |
 
 ### `TYPE` tokens
 
@@ -99,6 +101,14 @@ events and honours `<N>frames` waits. Follow-on ideas include exposing queue
 telemetry over `STATS`, making the inter-key delay user-configurable from the
 config file, and packaging scripted client examples for common automation
 setups.
+
+### Authentication
+
+Authentication is disabled by default. Set `[textmode_server].auth_token` (or
+export `DOSBOX_ANSI_AUTH_TOKEN`) to require clients to issue `AUTH <token>` as
+their first command. Each connection gets one attempt; a mismatch yields
+`ERR unauthorised` and closes the socket. Successful handshakes return
+`Auth OK` and unlock the remaining verbs.
 
 ### Known issues
 

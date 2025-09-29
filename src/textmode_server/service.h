@@ -21,6 +21,7 @@ struct ServiceConfig {
 	bool close_after_response = false;
 	uint32_t macro_interkey_frames = 1;
 	uint32_t inter_token_frame_delay = 1;
+	std::string auth_token;
 };
 
 struct ServiceResult {

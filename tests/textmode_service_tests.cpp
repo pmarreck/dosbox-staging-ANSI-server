@@ -74,6 +74,7 @@ TEST_F(TextModeServiceTest, ReturnsErrorWhenDisabled)
 	        .port            = 6000,
 	        .show_attributes = true,
 	        .sentinel        = "#",
+	        .auth_token      = "",
 	};
 
 	textmode::TextModeService service(config);
@@ -92,6 +93,7 @@ TEST_F(TextModeServiceTest, ReturnsErrorWhenNotInTextMode)
 	        .port            = 6000,
 	        .show_attributes = true,
 	        .sentinel        = "#",
+	        .auth_token      = "",
 	};
 
 	textmode::TextModeService service(config);
@@ -133,6 +135,7 @@ TEST_F(TextModeServiceTest, BuildsFrameWhenEnabled)
 	        .port            = 6000,
 	        .show_attributes = false,
 	        .sentinel        = "*",
+	        .auth_token      = "",
 	};
 
 	textmode::TextModeService service(config);

@@ -72,7 +72,8 @@ public:
 	void Stop();
 	void Poll();
 	void SetCloseAfterResponse(bool enable) { m_close_after_response = enable; }
- 	void SetClientCloseCallback(std::function<void(ClientHandle)> callback)
+	void SetAuthToken(std::string token);
+	void SetClientCloseCallback(std::function<void(ClientHandle)> callback)
 	{
 		m_client_close_callback = std::move(callback);
 	}
@@ -85,6 +86,8 @@ public:
 private:
 	struct Session {
 		std::string buffer;
+		bool authenticated = false;
+		bool attempted_auth = false;
 	};
 
 	void HandleData(ClientHandle client, const std::string& data);
@@ -96,6 +99,7 @@ private:
 	bool m_running   = false;
 	uint16_t m_port  = 0;
 	bool m_close_after_response = false;
+	std::string m_auth_token;
 	std::function<void(ClientHandle)> m_client_close_callback;
 };
 

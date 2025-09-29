@@ -5,10 +5,13 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <map>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 #include "hardware/serialport/misc_util.h"
@@ -22,6 +25,28 @@ namespace {
 
 constexpr size_t MaxClients = 8;
 constexpr size_t ReceiveBufferSize = 4096;
+constexpr char AuthOkResponse[]    = "Auth OK\n";
+constexpr char AuthErrorResponse[] = "ERR unauthorised\n";
+
+std::string TrimWhitespace(std::string_view text)
+{
+	const auto begin = text.find_first_not_of(" \t\r\n");
+	if (begin == std::string_view::npos) {
+		return {};
+	}
+	const auto end = text.find_last_not_of(" \t\r\n");
+	return std::string(text.substr(begin, end - begin + 1));
+}
+
+std::string ToUpperCopy(std::string_view text)
+{
+	std::string result(text);
+	std::transform(result.begin(),
+	               result.end(),
+	               result.begin(),
+	               [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+	return result;
+}
 
 ClientHandle ToHandle(TCPsocket socket)
 {
@@ -247,6 +272,7 @@ TextModeServer::TextModeServer(std::unique_ptr<NetworkBackend> backend)
           m_running(false),
           m_port(0),
           m_close_after_response(false),
+          m_auth_token(),
           m_client_close_callback()
 {
 	assert(m_backend);
@@ -255,6 +281,16 @@ TextModeServer::TextModeServer(std::unique_ptr<NetworkBackend> backend)
 TextModeServer::~TextModeServer()
 {
 	Stop();
+}
+
+void TextModeServer::SetAuthToken(std::string token)
+{
+	m_auth_token = std::move(token);
+	const bool require_auth = !m_auth_token.empty();
+	for (auto& [_, session] : m_sessions) {
+		session.authenticated  = !require_auth;
+		session.attempted_auth = false;
+	}
 }
 
 bool TextModeServer::Start(const uint16_t port, ICommandProcessor& processor)
@@ -323,9 +359,14 @@ void TextModeServer::Poll()
 	auto events = m_backend->Poll();
 	for (const auto& event : events) {
 		switch (event.type) {
-		case BackendEvent::Type::Connected:
-			m_sessions.emplace(event.client, Session{});
+		case BackendEvent::Type::Connected: {
+			auto [session_it, inserted] = m_sessions.emplace(event.client, Session{});
+			if (inserted) {
+				session_it->second.authenticated  = m_auth_token.empty();
+				session_it->second.attempted_auth = false;
+			}
 			break;
+		}
 		case BackendEvent::Type::Data:
 			HandleData(event.client, event.data);
 			break;
@@ -345,6 +386,7 @@ void TextModeServer::HandleData(const ClientHandle client, const std::string& da
 
 	auto& buffer = it->second.buffer;
 	buffer.append(data);
+	const bool require_auth = !m_auth_token.empty();
 
 	while (true) {
 		const auto newline_pos = buffer.find('\n');
@@ -358,6 +400,56 @@ void TextModeServer::HandleData(const ClientHandle client, const std::string& da
 		if (!line.empty() && line.back() == '\r') {
 			line.pop_back();
 		}
+
+		auto& session = it->second;
+		if (require_auth && !session.authenticated) {
+			const auto trimmed = TrimWhitespace(line);
+			if (trimmed.empty()) {
+				if (!m_backend->Send(client, AuthErrorResponse)) {
+					Drop(client);
+					break;
+				}
+				continue;
+			}
+
+			const auto space_pos = trimmed.find(' ');
+			const auto verb      = trimmed.substr(0, space_pos);
+			const auto verb_upper = ToUpperCopy(verb);
+
+			if (verb_upper != "AUTH" || session.attempted_auth) {
+				if (!m_backend->Send(client, AuthErrorResponse)) {
+					Drop(client);
+					break;
+				}
+				continue;
+			}
+
+			session.attempted_auth = true;
+			std::string provided;
+			if (space_pos != std::string::npos) {
+				provided = TrimWhitespace(trimmed.substr(space_pos + 1));
+			}
+
+			if (!provided.empty() && provided == m_auth_token) {
+				session.authenticated = true;
+				if (!m_backend->Send(client, AuthOkResponse)) {
+					Drop(client);
+					break;
+				}
+				continue;
+			}
+
+			std::fprintf(stderr,
+			            "TEXTMODE: AUTH failed for client %p\n",
+			            reinterpret_cast<void*>(client));
+			if (!m_backend->Send(client, AuthErrorResponse)) {
+				Drop(client);
+				break;
+			}
+			Drop(client);
+			break;
+		}
+
 		const auto response = m_processor->HandleCommand(line, CommandOrigin{client});
 		if (!response.deferred) {
 			if (!m_backend->Send(client, response.payload)) {

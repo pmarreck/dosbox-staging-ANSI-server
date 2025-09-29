@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -24,6 +25,34 @@ bool g_close_after_response = false;
 std::unique_ptr<textmode::TextModeServer> g_server = nullptr;
 std::unique_ptr<textmode::KeyboardCommandProcessor> g_keyboard_processor = nullptr;
 std::shared_ptr<textmode::QueuedTypeActionSink> g_queued_sink = nullptr;
+
+std::string ExpandEnv(const std::string& value)
+{
+	std::string result;
+	result.reserve(value.size());
+
+	size_t pos = 0;
+	while (pos < value.size()) {
+		const auto start = value.find("${", pos);
+		if (start == std::string::npos) {
+			result.append(value.substr(pos));
+			break;
+		}
+		result.append(value.substr(pos, start - pos));
+		const auto end = value.find('}', start + 2);
+		if (end == std::string::npos) {
+			result.append(value.substr(start));
+			break;
+		}
+		const auto name = value.substr(start + 2, end - (start + 2));
+		if (const char* env_value = std::getenv(name.c_str())) {
+			result.append(env_value);
+		}
+		pos = end + 1;
+	}
+
+	return result;
+}
 
 void EnsureServer()
 {
@@ -76,6 +105,16 @@ void ApplyConfigSection(Section* section)
 	config.inter_token_frame_delay = static_cast<uint32_t>(
 	        std::max(0, props->GetInt("inter_token_frame_delay")));
 
+	std::string auth_token = ExpandEnv(props->GetString("auth_token"));
+	if (auth_token.empty()) {
+		if (const char* env_token = std::getenv("DOSBOX_ANSI_AUTH_TOKEN")) {
+			if (*env_token) {
+				auth_token = env_token;
+			}
+		}
+	}
+	config.auth_token = std::move(auth_token);
+
 	textmode::Configure(config);
 }
 
@@ -127,6 +166,10 @@ void TEXTMODESERVER_AddConfigSection(const ConfigPtr& conf)
 	inter_token_frames->SetHelp(
 	        "Frames to wait between TYPE tokens when processing queued actions (default 1).");
 
+	auto* auth_token = section->AddString("auth_token", only_at_start, "");
+	auth_token->SetHelp(
+	        "Shared secret required by AUTH. Supports ${ENV} expansion. Leave empty to disable.");
+
 }
 
 namespace textmode {
@@ -157,6 +200,7 @@ void Configure(const ServiceConfig& config)
 
 	EnsureServer();
 	if (g_server) {
+		g_server->SetAuthToken(config.auth_token);
 		g_server->SetCloseAfterResponse(g_close_after_response);
 	}
 

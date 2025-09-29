@@ -142,6 +142,7 @@ TEST_F(TextModeServerApiTest, ReturnsFrameWhenEnabled)
 	        .port            = 6000,
 	        .show_attributes = false,
 	        .sentinel        = "*",
+	        .auth_token      = "",
 	};
 
 	textmode::Configure(config);
@@ -160,6 +161,7 @@ TEST_F(TextModeServerApiTest, ShimReturnsPayloadString)
 	        .port            = 6000,
 	        .show_attributes = false,
 	        .sentinel        = "*",
+	        .auth_token      = "",
 	};
 
 	textmode::Configure(config);

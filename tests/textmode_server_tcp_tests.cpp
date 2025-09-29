@@ -85,6 +85,67 @@ protected:
 	}
 };
 
+TEST_F(TextModeServerTcpTest, RequiresAuthenticationBeforeCommands)
+{
+	auto backend = std::make_unique<FakeBackend>();
+	FakeBackend* backend_ptr = backend.get();
+
+	CommandProcessor processor([&] { return MakeSuccess(); });
+
+	TextModeServer server(std::move(backend));
+	server.SetAuthToken("secret");
+	ASSERT_TRUE(server.Start(6000, processor));
+
+	const ClientHandle client = 5;
+	backend_ptr->QueueEvents({BackendEvent::Connected(client)});
+	server.Poll();
+
+	backend_ptr->QueueEvents({BackendEvent::Data(client, "GET\n")});
+	server.Poll();
+
+	ASSERT_EQ(backend_ptr->sent.size(), 1u);
+	EXPECT_EQ(backend_ptr->sent[0].first, client);
+	EXPECT_EQ(backend_ptr->sent[0].second, "ERR unauthorised\n");
+	EXPECT_TRUE(backend_ptr->closed_clients.empty());
+
+	backend_ptr->QueueEvents({BackendEvent::Data(client, "AUTH nope\n")});
+	server.Poll();
+
+	ASSERT_EQ(backend_ptr->sent.size(), 2u);
+	EXPECT_EQ(backend_ptr->sent[1].second, "ERR unauthorised\n");
+	ASSERT_EQ(backend_ptr->closed_clients.size(), 1u);
+	EXPECT_EQ(backend_ptr->closed_clients[0], client);
+}
+
+TEST_F(TextModeServerTcpTest, AuthenticatesAndProcessesCommands)
+{
+	auto backend = std::make_unique<FakeBackend>();
+	FakeBackend* backend_ptr = backend.get();
+
+	CommandProcessor processor([&] { return MakeSuccess(); });
+
+	TextModeServer server(std::move(backend));
+	server.SetAuthToken("secret");
+	ASSERT_TRUE(server.Start(6000, processor));
+
+	const ClientHandle client = 6;
+	backend_ptr->QueueEvents({BackendEvent::Connected(client)});
+	server.Poll();
+
+	backend_ptr->QueueEvents({BackendEvent::Data(client, "AUTH secret\n")});
+	server.Poll();
+
+	ASSERT_EQ(backend_ptr->sent.size(), 1u);
+	EXPECT_EQ(backend_ptr->sent[0].second, "Auth OK\n");
+	EXPECT_TRUE(backend_ptr->closed_clients.empty());
+
+	backend_ptr->QueueEvents({BackendEvent::Data(client, "GET\n")});
+	server.Poll();
+
+	ASSERT_EQ(backend_ptr->sent.size(), 2u);
+	EXPECT_EQ(backend_ptr->sent[1].second, "FRAME\n");
+}
+
 TEST_F(TextModeServerTcpTest, StartsAndStops)
 {
 	auto backend = std::make_unique<FakeBackend>();
