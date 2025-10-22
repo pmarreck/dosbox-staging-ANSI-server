@@ -355,6 +355,7 @@ add_executable(dosbox
     src/textmode_server/keyboard_processor.cpp
     src/textmode_server/server.cpp
     src/textmode_server/command_processor.cpp
+    src/textmode_server/memory_access.cpp
 )
 target_include_directories(
   dosbox PUBLIC include ${CMAKE_CURRENT_BINARY_DIR}/include

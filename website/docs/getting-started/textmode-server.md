@@ -17,6 +17,9 @@ show_attributes = true   # emit ANSI colour when true, plain text when false
 sentinel = 🖵            # UTF-8 marker separating metadata from payload
 close_after_response = false  # close TCP socket after each reply when true
 auth_token = ${DOSBOX_ANSI_AUTH_TOKEN}  # optional shared secret required by AUTH
+debug_segment = 0x0000       # optional real-mode segment for DEBUG/PEEK shorthand
+debug_offset = 0x0000        # offset added to segment<<4 (or use as physical when segment=0)
+debug_length = 0             # bytes returned by DEBUG (0 disables the region)
 ```
 
 Commands are newline-terminated and case-sensitive; verbs must be uppercase or
@@ -30,6 +33,9 @@ exposes the following protocol commands:
 | `GET SHOWSPC`      | Same as `GET`, but space characters are shown as middle dots. |
 | `TYPE …`           | Sends key input to the guest. Add `GET` or `VIEW` at the end to fetch the resulting frame. |
 | `STATS`            | Reports cumulative request, success, and failure counts. |
+| `PEEK addr len`    | Reads `len` bytes from real-mode memory (physical or `segment:offset`) and returns uppercase hex. |
+| `POKE addr hex`    | Writes hexadecimal bytes to real-mode memory (bounded by the server for safety). |
+| `DEBUG`            | Returns `debug_length` bytes at the configured segment/offset as a hex dump. |
 | `EXIT`             | Requests a clean emulator shutdown (`OK` is returned once accepted). |
 | `AUTH token`       | Authenticates the session when an auth token is configured. |
 
@@ -110,3 +116,9 @@ returned when `show_attributes=false`.
   `DOSBOX_ANSI_AUTH_TOKEN` environment variable) to require clients to start
   with `AUTH <token>`. A failed attempt closes the socket; success returns
   `Auth OK` and unlocks other verbs.
+- `PEEK` accepts decimal or hexadecimal addresses (with optional `0x` prefix or `h` suffix) and supports
+  `segment:offset` notation. Successful replies look like `address=0x0000FF00 data=DEADBEEF\n`.
+- `POKE` expects an even number of hexadecimal digits (optionally prefixed with `0x`) and writes directly to
+  real-mode memory. The write length is bounded internally to prevent runaway edits.
+- Configure `debug_segment`, `debug_offset`, and `debug_length` when you need repeated dumps of a fixed region;
+  the `DEBUG` command returns the same formatted line as `PEEK` without having to provide parameters.

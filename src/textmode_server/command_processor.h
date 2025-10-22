@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "textmode_server/service.h"
+#include "textmode_server/memory_access.h"
 
 namespace textmode {
 
@@ -77,7 +78,9 @@ public:
 	CommandProcessor(std::function<ServiceResult()> provider,
 	               std::function<CommandResponse(const std::string&)> keyboard_handler = {},
 	               std::function<void()> exit_handler = {},
-	               std::function<std::vector<std::string>()> keys_down_provider = {});
+	               std::function<std::vector<std::string>()> keys_down_provider = {},
+	               std::function<MemoryAccessResult(uint32_t, uint32_t)> memory_reader = {},
+	               std::function<MemoryWriteResult(uint32_t, const std::vector<uint8_t>&)> memory_writer = {});
 
 	CommandResponse HandleCommand(const std::string& command) override;
 	CommandResponse HandleCommand(const std::string& command,
@@ -88,17 +91,23 @@ public:
 	void SetTypeSinkRequiresClient(bool requires_client);
 	void SetQueueNonFrameCommands(bool enable);
 	void SetAllowDeferredFrames(bool enable);
+	void SetDebugRegion(uint32_t offset, uint32_t length);
 
 private:
 	CommandResponse HandleCommandInternal(const std::string& command,
 	                                      const CommandOrigin& origin);
 	CommandResponse HandleTypeCommand(const std::string& argument,
 	                                  const CommandOrigin& origin);
+	CommandResponse HandlePeekCommand(const std::string& argument);
+	CommandResponse HandleDebugCommand();
+	CommandResponse HandlePokeCommand(const std::string& argument);
 
 	std::function<ServiceResult()> m_provider;
 	std::function<CommandResponse(const std::string&)> m_keyboard_handler;
 	std::function<void()> m_exit_handler;
 	std::function<std::vector<std::string>()> m_keys_down_provider;
+	std::function<MemoryAccessResult(uint32_t, uint32_t)> m_memory_reader;
+	std::function<MemoryWriteResult(uint32_t, const std::vector<uint8_t>&)> m_memory_writer;
 	std::shared_ptr<ITypeActionSink> m_type_sink;
 	std::optional<CommandOrigin> m_active_origin;
 	uint64_t m_requests = 0;
@@ -109,6 +118,9 @@ private:
 	bool m_type_sink_requires_client = false;
 	bool m_queue_non_frame_commands  = true;
 	bool m_allow_deferred_frames     = true;
+	uint32_t m_debug_offset          = 0;
+	uint32_t m_debug_length          = 0;
+	bool m_debug_enabled             = false;
 };
 
 } // namespace textmode

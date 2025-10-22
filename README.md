@@ -44,6 +44,9 @@ show_attributes = true    # emit 24-bit ANSI colour or plain text
 sentinel = 🖵             # UTF-8 delimiter before the payload (defaults to 🖵)
 close_after_response = false  # close sockets immediately after replies
 auth_token = ${DOSBOX_ANSI_AUTH_TOKEN}  # optional shared secret required by AUTH
+debug_segment = 0x0000     # optional real-mode segment for DEBUG/PEEK shorthand
+debug_offset = 0x0000      # offset added to segment<<4 (or physical base when segment=0)
+debug_length = 0           # bytes returned by DEBUG (0 disables the region)
 
 # TYPE macro behaviour
 macro_interkey_frames = 1      # frame delay inserted between expanded characters
@@ -70,8 +73,17 @@ must be uppercase; the server suggests the correct spelling and replies with
 | `TYPE …`      | Enqueue keyboard events, delays, and optional frame capture. |
 | `VIEW`        | Synonym for `GET` (allowed as a trailing token inside `TYPE`). |
 | `STATS`       | Report cumulative request/success/failure counters plus `keys_down`. |
+| `PEEK addr len` | Return `len` bytes from real-mode memory as hex (addr accepts physical or `segment:offset`). |
+| `POKE addr hex` | Write hex-encoded bytes to real-mode memory (length bounded for safety). |
+| `DEBUG`       | Dump the configured debug region (`debug_segment`/`debug_offset`/`debug_length`) as hex. |
 | `EXIT`        | Request a graceful emulator shutdown. |
 | `AUTH token`  | Authenticate when `auth_token`/`DOSBOX_ANSI_AUTH_TOKEN` is set. |
+
+`PEEK` accepts decimal or hexadecimal addresses (with optional `0x`/`h` suffix) and supports `segment:offset`
+notation. Responses are uppercase hex lines like `address=0x0000FF00 data=DEADBEEF\n`. `POKE` expects an even
+number of hexadecimal characters (with optional `0x` prefix) and writes directly into the emulated real-mode
+memory window. Configure a fixed region for routine dumps via `DEBUG`, which returns the same formatted line
+using the `debug_*` properties above.
 
 ### `TYPE` tokens
 

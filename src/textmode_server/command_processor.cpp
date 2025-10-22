@@ -7,11 +7,13 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <charconv>
 #if defined(ENABLE_TEXTMODE_QUEUE_TRACE)
 #include <cstdio>
 #include <cstdarg>
 #include <cstdlib>
 #endif
+#include <iomanip>
 #include <limits>
 #include <optional>
 #include <sstream>
@@ -69,6 +71,142 @@ std::string to_upper(std::string_view str)
 	               upper.begin(),
 	               [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
 	return upper;
+}
+
+constexpr uint32_t kMaxPeekLength  = 4096;
+constexpr uint32_t kMaxPokeLength  = 4096;
+constexpr uint32_t kMaxDebugLength = 4096;
+
+std::optional<uint32_t> parse_unsigned_number(std::string_view text)
+{
+	if (text.empty()) {
+		return std::nullopt;
+	}
+
+	bool has_suffix_hex = false;
+	if (!text.empty() && (text.back() == 'h' || text.back() == 'H')) {
+		has_suffix_hex = true;
+		text.remove_suffix(1);
+	}
+
+	if (text.empty()) {
+		return std::nullopt;
+	}
+
+	int base = 10;
+	if (text.size() > 2 && text.front() == '0' &&
+	    (text[1] == 'x' || text[1] == 'X')) {
+		base = 16;
+		text.remove_prefix(2);
+	} else {
+		const bool has_alpha = std::any_of(text.begin(), text.end(), [](unsigned char ch) {
+			return std::isalpha(ch) != 0;
+		});
+		if (has_suffix_hex || has_alpha) {
+			base = 16;
+		}
+	}
+
+	if (text.empty()) {
+		return std::nullopt;
+	}
+
+	uint32_t value = 0;
+	const auto result =
+	        std::from_chars(text.data(), text.data() + text.size(), value, base);
+	if (result.ec != std::errc() || result.ptr != text.data() + text.size()) {
+		return std::nullopt;
+	}
+
+	return value;
+}
+
+std::optional<uint32_t> parse_real_mode_address(std::string_view token)
+{
+	const auto colon_pos = token.find(':');
+	if (colon_pos == std::string_view::npos) {
+		return parse_unsigned_number(token);
+	}
+
+	const auto segment_view = token.substr(0, colon_pos);
+	const auto offset_view  = token.substr(colon_pos + 1);
+	const auto segment      = parse_unsigned_number(segment_view);
+	const auto offset       = parse_unsigned_number(offset_view);
+
+	if (!segment || !offset || *segment > 0xFFFF) {
+		return std::nullopt;
+	}
+
+	const uint64_t address =
+	        (static_cast<uint64_t>(*segment) << 4) + static_cast<uint64_t>(*offset);
+	if (address > std::numeric_limits<uint32_t>::max()) {
+		return std::nullopt;
+	}
+
+	return static_cast<uint32_t>(address);
+}
+
+std::string bytes_to_hex(const std::vector<uint8_t>& bytes)
+{
+	std::string hex;
+	hex.reserve(bytes.size() * 2);
+
+	static constexpr char digits[] = "0123456789ABCDEF";
+	for (const auto byte : bytes) {
+		hex.push_back(digits[(byte >> 4) & 0x0f]);
+		hex.push_back(digits[byte & 0x0f]);
+	}
+	return hex;
+}
+
+std::string format_memory_payload(const uint32_t address,
+                                  const std::vector<uint8_t>& bytes)
+{
+	std::ostringstream oss;
+	oss << "address=0x" << std::hex << std::uppercase << std::setfill('0')
+	    << std::setw(8) << address << " data=" << bytes_to_hex(bytes) << "\n";
+	return oss.str();
+}
+
+int hex_digit_value(const char ch)
+{
+	if (ch >= '0' && ch <= '9') {
+		return ch - '0';
+	}
+	if (ch >= 'a' && ch <= 'f') {
+		return 10 + (ch - 'a');
+	}
+	if (ch >= 'A' && ch <= 'F') {
+		return 10 + (ch - 'A');
+	}
+	return -1;
+}
+
+std::optional<std::vector<uint8_t>> parse_hex_bytes(std::string_view token)
+{
+	if (token.size() > 2 && token.front() == '0' &&
+	    (token[1] == 'x' || token[1] == 'X')) {
+		token.remove_prefix(2);
+	}
+
+	if (token.empty() || (token.size() % 2) != 0) {
+		return std::nullopt;
+	}
+
+	std::vector<uint8_t> bytes;
+	bytes.reserve(token.size() / 2);
+
+	for (size_t i = 0; i < token.size(); i += 2) {
+		const int hi = hex_digit_value(token[i]);
+		const int lo = hex_digit_value(token[i + 1]);
+		if (hi < 0 || lo < 0) {
+			return std::nullopt;
+		}
+		const auto value = static_cast<uint8_t>((hi << 4) | lo);
+		bytes.push_back(value);
+	}
+
+	return bytes;
 }
 
 struct TypeToken {
@@ -154,7 +292,8 @@ const std::unordered_map<std::string, std::string>& command_case_lookup()
 {
 	static const std::unordered_map<std::string, std::string> lookup = {
 	        {"TYPE", "TYPE"}, {"GET", "GET"}, {"VIEW", "VIEW"},
-	        {"STATS", "STATS"}, {"EXIT", "EXIT"}};
+	        {"STATS", "STATS"}, {"EXIT", "EXIT"},
+	        {"PEEK", "PEEK"},   {"DEBUG", "DEBUG"}, {"POKE", "POKE"}};
 	return lookup;
 }
 
@@ -602,18 +741,28 @@ public:
 CommandProcessor::CommandProcessor(std::function<ServiceResult()> provider,
 	                             std::function<CommandResponse(const std::string&)> keyboard_handler,
 	                             std::function<void()> exit_handler,
-	                             std::function<std::vector<std::string>()> keys_down_provider)
+	                             std::function<std::vector<std::string>()> keys_down_provider,
+	                             std::function<MemoryAccessResult(uint32_t, uint32_t)> memory_reader,
+	                             std::function<MemoryWriteResult(uint32_t, const std::vector<uint8_t>&)> memory_writer)
         : m_provider(std::move(provider)),
           m_keyboard_handler(std::move(keyboard_handler)),
           m_exit_handler(std::move(exit_handler)),
           m_keys_down_provider(std::move(keys_down_provider)),
+          m_memory_reader(std::move(memory_reader)),
+          m_memory_writer(std::move(memory_writer)),
           m_type_sink(std::make_shared<ImmediateTypeActionSink>()),
           m_active_origin(),
           m_requests(0),
           m_success(0),
           m_failures(0),
           m_exit_requested(false),
-          m_macro_interkey_frames(0)
+          m_macro_interkey_frames(0),
+          m_type_sink_requires_client(false),
+          m_queue_non_frame_commands(true),
+          m_allow_deferred_frames(true),
+          m_debug_offset(0),
+          m_debug_length(0),
+          m_debug_enabled(false)
 {}
 
 CommandResponse CommandProcessor::HandleCommand(const std::string& command)
@@ -630,6 +779,110 @@ CommandResponse CommandProcessor::HandleCommand(const std::string& command,
 	const auto response = HandleCommand(command);
 	m_active_origin     = previous;
 	return response;
+}
+
+CommandResponse CommandProcessor::HandlePeekCommand(const std::string& argument)
+{
+	++m_requests;
+	std::istringstream iss(argument);
+	std::string address_token;
+	std::string length_token;
+	std::string extra;
+	if (!(iss >> address_token >> length_token) || (iss >> extra)) {
+		++m_failures;
+		return {false, "ERR invalid PEEK arguments\n"};
+	}
+
+	const auto offset_opt = parse_real_mode_address(address_token);
+	const auto length_opt = parse_unsigned_number(length_token);
+	if (!offset_opt || !length_opt || *length_opt == 0 ||
+	    *length_opt > kMaxPeekLength) {
+		++m_failures;
+		return {false, "ERR invalid PEEK arguments\n"};
+	}
+
+	if (!m_memory_reader) {
+		++m_failures;
+		return {false, "ERR memory access unavailable\n"};
+	}
+
+	const auto result = m_memory_reader(*offset_opt, *length_opt);
+	if (!result.success) {
+		++m_failures;
+		const auto message = result.error.empty() ? "memory read failed" : result.error;
+		return {false, "ERR " + message + "\n"};
+	}
+
+	++m_success;
+	return {true, format_memory_payload(*offset_opt, result.bytes)};
+}
+
+CommandResponse CommandProcessor::HandleDebugCommand()
+{
+	if (!m_debug_enabled || m_debug_length == 0) {
+		return {false, "ERR debug region not configured\n"};
+	}
+
+	++m_requests;
+	if (!m_memory_reader) {
+		++m_failures;
+		return {false, "ERR memory access unavailable\n"};
+	}
+
+	const auto result = m_memory_reader(m_debug_offset, m_debug_length);
+	if (!result.success) {
+		++m_failures;
+		const auto message = result.error.empty() ? "memory read failed" : result.error;
+		return {false, "ERR " + message + "\n"};
+	}
+
+	++m_success;
+	return {true, format_memory_payload(m_debug_offset, result.bytes)};
+}
+
+CommandResponse CommandProcessor::HandlePokeCommand(const std::string& argument)
+{
+	++m_requests;
+	std::istringstream iss(argument);
+	std::string address_token;
+	std::string data_token;
+	std::string extra;
+	if (!(iss >> address_token >> data_token) || (iss >> extra)) {
+		++m_failures;
+		return {false, "ERR invalid POKE arguments\n"};
+	}
+
+	const auto offset_opt = parse_real_mode_address(address_token);
+	if (!offset_opt) {
+		++m_failures;
+		return {false, "ERR invalid POKE arguments\n"};
+	}
+
+	const auto data_opt = parse_hex_bytes(data_token);
+	if (!data_opt || data_opt->empty()) {
+		++m_failures;
+		return {false, "ERR invalid POKE data\n"};
+	}
+
+	if (data_opt->size() > kMaxPokeLength) {
+		++m_failures;
+		return {false, "ERR invalid POKE data\n"};
+	}
+
+	if (!m_memory_writer) {
+		++m_failures;
+		return {false, "ERR memory access unavailable\n"};
+	}
+
+	const auto result = m_memory_writer(*offset_opt, *data_opt);
+	if (!result.success) {
+		++m_failures;
+		const auto message = result.error.empty() ? "memory write failed" : result.error;
+		return {false, "ERR " + message + "\n"};
+	}
+
+	++m_success;
+	return {true, "OK\n"};
 }
 
 CommandResponse CommandProcessor::HandleCommandInternal(const std::string& raw_command,
@@ -680,6 +933,18 @@ CommandResponse CommandProcessor::HandleCommandInternal(const std::string& raw_c
 		m_exit_requested = true;
 		++m_success;
 		return {true, "OK\n"};
+	}
+
+	if (verb_upper == "PEEK") {
+		return HandlePeekCommand(argument);
+	}
+
+	if (verb_upper == "DEBUG") {
+		return HandleDebugCommand();
+	}
+
+	if (verb_upper == "POKE") {
+		return HandlePokeCommand(argument);
 	}
 
 	if (verb_upper == "GET" || verb_upper == "VIEW") {
@@ -904,6 +1169,13 @@ void CommandProcessor::SetQueueNonFrameCommands(const bool enable)
 void CommandProcessor::SetAllowDeferredFrames(const bool enable)
 {
 	m_allow_deferred_frames = enable;
+}
+
+void CommandProcessor::SetDebugRegion(const uint32_t offset, const uint32_t length)
+{
+	m_debug_offset  = offset;
+	m_debug_length  = std::min(length, kMaxDebugLength);
+	m_debug_enabled = (m_debug_length > 0);
 }
 
 } // namespace textmode

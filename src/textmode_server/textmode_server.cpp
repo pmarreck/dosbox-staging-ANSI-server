@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -13,6 +14,7 @@
 #include "dosbox.h"
 #include "misc/logging.h"
 #include "textmode_server/keyboard_processor.h"
+#include "textmode_server/memory_access.h"
 #include "textmode_server/queued_type_action_sink.h"
 #include "textmode_server/server.h"
 #include "hardware/input/keyboard.h"
@@ -52,6 +54,16 @@ std::string ExpandEnv(const std::string& value)
 	}
 
 	return result;
+}
+
+uint32_t CombineSegmentOffset(const uint32_t segment, const uint32_t offset)
+{
+	const uint64_t address =
+	        (static_cast<uint64_t>(segment) << 4) + static_cast<uint64_t>(offset);
+	if (address > std::numeric_limits<uint32_t>::max()) {
+		return std::numeric_limits<uint32_t>::max();
+	}
+	return static_cast<uint32_t>(address);
 }
 
 void EnsureServer()
@@ -104,6 +116,9 @@ void ApplyConfigSection(Section* section)
 	        std::max(0, props->GetInt("macro_interkey_frames")));
 	config.inter_token_frame_delay = static_cast<uint32_t>(
 	        std::max(0, props->GetInt("inter_token_frame_delay")));
+	config.debug_segment = static_cast<uint32_t>(props->GetHex("debug_segment"));
+	config.debug_offset  = static_cast<uint32_t>(props->GetHex("debug_offset"));
+	config.debug_length  = static_cast<uint32_t>(std::max(0, props->GetInt("debug_length")));
 
 	std::string auth_token = ExpandEnv(props->GetString("auth_token"));
 	if (auth_token.empty()) {
@@ -166,6 +181,19 @@ void TEXTMODESERVER_AddConfigSection(const ConfigPtr& conf)
 	inter_token_frames->SetHelp(
 	        "Frames to wait between TYPE tokens when processing queued actions (default 1).");
 
+	auto* debug_segment = section->AddHex("debug_segment", only_at_start, 0);
+	debug_segment->SetHelp(
+	        "Real-mode segment used as the base for DEBUG responses (default 0).");
+
+	auto* debug_offset = section->AddHex("debug_offset", only_at_start, 0);
+	debug_offset->SetHelp(
+	        "Offset added to the segment base for DEBUG responses (default 0).");
+
+	auto* debug_length = section->AddInt("debug_length", only_at_start, 0);
+	debug_length->SetMinMax(0, 4096);
+	debug_length->SetHelp(
+	        "Number of bytes returned by DEBUG (default 0 disables the region).");
+
 	auto* auth_token = section->AddString("auth_token", only_at_start, "");
 	auth_token->SetHelp(
 	        "Shared secret required by AUTH. Supports ${ENV} expansion. Leave empty to disable.");
@@ -193,9 +221,23 @@ void Configure(const ServiceConfig& config)
 		}
 		return g_keyboard_processor->ActiveKeys();
 	};
-	g_processor.emplace(&ProvideFrame, keyboard_handler, exit_handler, keys_down_provider);
+	const auto debug_address = CombineSegmentOffset(config.debug_segment,
+	                                               config.debug_offset);
+	auto memory_reader = [](uint32_t offset, uint32_t length) {
+		return textmode::PeekMemoryRegion(offset, length);
+	};
+	auto memory_writer = [](uint32_t offset, const std::vector<uint8_t>& data) {
+		return textmode::PokeMemoryRegion(offset, data);
+	};
+	g_processor.emplace(&ProvideFrame,
+	                   keyboard_handler,
+	                   exit_handler,
+	                   keys_down_provider,
+	                   memory_reader,
+	                   memory_writer);
 	if (g_processor) {
 		g_processor->SetMacroInterkeyFrames(config.macro_interkey_frames);
+		g_processor->SetDebugRegion(debug_address, config.debug_length);
 	}
 
 	EnsureServer();

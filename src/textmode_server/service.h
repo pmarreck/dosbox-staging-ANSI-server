@@ -22,6 +22,9 @@ struct ServiceConfig {
 	uint32_t macro_interkey_frames = 1;
 	uint32_t inter_token_frame_delay = 1;
 	std::string auth_token;
+	uint32_t debug_segment = 0;
+	uint32_t debug_offset  = 0;
+	uint32_t debug_length  = 0;
 };
 
 struct ServiceResult {

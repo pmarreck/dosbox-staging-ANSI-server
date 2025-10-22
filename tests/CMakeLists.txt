@@ -33,6 +33,7 @@ add_executable(dosbox_tests
     textmode_encoding_tests.cpp
     textmode_service_tests.cpp
     textmode_command_processor_tests.cpp
+    textmode_memory_access_tests.cpp
     textmode_keyboard_processor_tests.cpp
     textmode_server_tcp_tests.cpp
     textmode_server_api_tests.cpp

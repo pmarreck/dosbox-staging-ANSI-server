@@ -60,6 +60,12 @@ TEST_F(TextModeServerConfigTest, Defaults)
 	ASSERT_NE(close_prop, nullptr);
 	EXPECT_FALSE(close_prop->GetValue());
 
+	EXPECT_EQ(static_cast<int>(props->GetHex("debug_segment")), 0);
+	EXPECT_EQ(static_cast<int>(props->GetHex("debug_offset")), 0);
+
+	auto* debug_length_prop = dynamic_cast<PropInt*>(props->GetProperty("debug_length"));
+	ASSERT_NE(debug_length_prop, nullptr);
+	EXPECT_EQ(static_cast<int>(debug_length_prop->GetValue()), 0);
 }
 
 TEST_F(TextModeServerConfigTest, Overrides)
@@ -72,6 +78,9 @@ TEST_F(TextModeServerConfigTest, Overrides)
 	ASSERT_TRUE(props->HandleInputline("show_attributes = false"));
 	ASSERT_TRUE(props->HandleInputline("sentinel = @"));
 	ASSERT_TRUE(props->HandleInputline("close_after_response = true"));
+	ASSERT_TRUE(props->HandleInputline("debug_segment = c000"));
+	ASSERT_TRUE(props->HandleInputline("debug_offset = 1234"));
+	ASSERT_TRUE(props->HandleInputline("debug_length = 64"));
 
 
 	auto* enable_prop = props->GetBoolProp("enable");
@@ -94,6 +103,12 @@ TEST_F(TextModeServerConfigTest, Overrides)
 	ASSERT_NE(close_prop, nullptr);
 	EXPECT_TRUE(close_prop->GetValue());
 
+	EXPECT_EQ(static_cast<int>(props->GetHex("debug_segment")), 0xc000);
+	EXPECT_EQ(static_cast<int>(props->GetHex("debug_offset")), 0x1234);
+
+	auto* debug_length_prop = dynamic_cast<PropInt*>(props->GetProperty("debug_length"));
+	ASSERT_NE(debug_length_prop, nullptr);
+	EXPECT_EQ(static_cast<int>(debug_length_prop->GetValue()), 64);
 }
 
 } // namespace

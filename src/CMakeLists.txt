@@ -25,5 +25,6 @@ if(OPT_TESTS)
         textmode_server/keyboard_processor.cpp
         textmode_server/server.cpp
         textmode_server/command_processor.cpp
+        textmode_server/memory_access.cpp
     )
 endif()

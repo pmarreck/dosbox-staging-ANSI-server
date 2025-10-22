@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 #include <memory>
+#include <vector>
 
 namespace {
 
@@ -453,6 +454,117 @@ TEST_F(TextModeCommandProcessorTest, ExitRequestsShutdown)
 	EXPECT_NE(stats.payload.find("requests=1"), std::string::npos);
 	EXPECT_NE(stats.payload.find("success=1"), std::string::npos);
 	EXPECT_NE(stats.payload.find("failures=0"), std::string::npos);
+}
+
+TEST_F(TextModeCommandProcessorTest, PeekReadsMemoryRegion)
+{
+	CommandProcessor processor([] { return MakeSuccess(); },
+	                          {},
+	                          {},
+	                          {},
+	                          [](uint32_t offset, uint32_t length) {
+		                          EXPECT_EQ(offset, 0x1234u);
+		                          EXPECT_EQ(length, 4u);
+		                          return textmode::MemoryAccessResult{
+		                                  true, {0x10, 0x20, 0x30, 0x40}, ""};
+	                          });
+
+	const auto response = processor.HandleCommand("PEEK 0x1234 4");
+
+	ASSERT_TRUE(response.ok);
+	EXPECT_EQ(response.payload, "address=0x00001234 data=10203040\n");
+}
+
+TEST_F(TextModeCommandProcessorTest, PeekSupportsSegmentColonOffset)
+{
+	CommandProcessor processor([] { return MakeSuccess(); },
+	                          {},
+	                          {},
+	                          {},
+	                          [](uint32_t offset, uint32_t length) {
+		                          EXPECT_EQ(offset, 0xC0010u);
+		                          EXPECT_EQ(length, 2u);
+		                          return textmode::MemoryAccessResult{
+		                                  true, {0xAA, 0x55}, ""};
+	                          });
+
+	const auto response = processor.HandleCommand("PEEK C000:0x10 2");
+
+	ASSERT_TRUE(response.ok) << response.payload;
+	EXPECT_EQ(response.payload, "address=0x000C0010 data=AA55\n");
+}
+
+TEST_F(TextModeCommandProcessorTest, PeekRejectsInvalidArguments)
+{
+	CommandProcessor processor([] { return MakeSuccess(); });
+
+	const auto response = processor.HandleCommand("PEEK");
+	EXPECT_FALSE(response.ok);
+	EXPECT_EQ(response.payload, "ERR invalid PEEK arguments\n");
+}
+
+TEST_F(TextModeCommandProcessorTest, DebugReadsConfiguredRegion)
+{
+	CommandProcessor processor([] { return MakeSuccess(); },
+	                          {},
+	                          {},
+	                          {},
+	                          [](uint32_t offset, uint32_t length) {
+		                          EXPECT_EQ(offset, 0x400u);
+		                          EXPECT_EQ(length, 3u);
+		                          return textmode::MemoryAccessResult{
+		                                  true, {0x01, 0x02, 0x03}, ""};
+	                          });
+	processor.SetDebugRegion(0x400u, 3u);
+
+	const auto response = processor.HandleCommand("DEBUG");
+
+	ASSERT_TRUE(response.ok) << response.payload;
+	EXPECT_EQ(response.payload, "address=0x00000400 data=010203\n");
+}
+
+TEST_F(TextModeCommandProcessorTest, DebugRequiresConfiguredRegion)
+{
+	CommandProcessor processor([] { return MakeSuccess(); });
+
+	const auto response = processor.HandleCommand("DEBUG");
+
+	EXPECT_FALSE(response.ok);
+	EXPECT_EQ(response.payload, "ERR debug region not configured\n");
+}
+
+TEST_F(TextModeCommandProcessorTest, PokeWritesBytes)
+{
+	bool invoked = false;
+	std::vector<uint8_t> observed;
+	CommandProcessor processor([] { return MakeSuccess(); },
+	                          {},
+	                          {},
+	                          {},
+	                          {},
+	                          [&](uint32_t offset, const std::vector<uint8_t>& data) {
+		                          invoked  = true;
+		                          EXPECT_EQ(offset, 0x2000u);
+		                          observed = data;
+		                          return textmode::MemoryWriteResult{true, data.size(), ""};
+	                          });
+
+	const auto response = processor.HandleCommand("POKE 0x2000 DEADBEEF");
+
+	ASSERT_TRUE(response.ok) << response.payload;
+	EXPECT_EQ(response.payload, "OK\n");
+	ASSERT_TRUE(invoked);
+	const std::vector<uint8_t> expected{0xDE, 0xAD, 0xBE, 0xEF};
+	EXPECT_EQ(observed, expected);
+}
+
+TEST_F(TextModeCommandProcessorTest, PokeValidatesHexInput)
+{
+	CommandProcessor processor([] { return MakeSuccess(); });
+
+	const auto response = processor.HandleCommand("POKE 100 foo");
+	EXPECT_FALSE(response.ok);
+	EXPECT_EQ(response.payload, "ERR invalid POKE data\n");
 }
 
 } // namespace
