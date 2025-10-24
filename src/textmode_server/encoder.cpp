@@ -47,7 +47,7 @@ std::string to_utf8_char(const uint8_t dos_char)
 {
 	const std::string dos_str(1, static_cast<char>(dos_char));
 	const auto utf8 = dos_to_utf8(dos_str,
-	                              DosStringConvertMode::WithControlCodes,
+	                              DosStringConvertMode::ScreenCodesOnly,
 	                              CodePage437);
 	return utf8.empty() ? std::string("?") : utf8;
 }

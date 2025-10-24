@@ -30,6 +30,8 @@ extern char** environ;
 namespace {
 
 constexpr uint16_t kTextPort     = 6200;
+const std::filesystem::path kTestsDir =
+        std::filesystem::absolute(std::filesystem::path(__FILE__)).parent_path();
 
 struct SocketGuard {
 	explicit SocketGuard(TCPsocket sock = nullptr) : socket(sock) {}
@@ -139,6 +141,33 @@ void WriteConfig(const std::filesystem::path& path, bool close_after_response = 
 	cfg << "@echo off\n";
 	cfg << "cls\n";
 	cfg << "echo TEXTMODE ROUNDTRIP READY\n";
+}
+
+void WriteMemoryProbeConfig(const std::filesystem::path& path,
+                            const std::filesystem::path& mount_dir)
+{
+	std::ofstream cfg(path);
+	ASSERT_TRUE(cfg.is_open());
+
+	cfg << "[sdl]\n";
+	cfg << "output=surface\n";
+	cfg << "fullscreen=false\n";
+	cfg << "mapperfile=mapper.txt\n";
+	cfg << "[cpu]\n";
+	cfg << "cycles=fixed 1000\n";
+	cfg << "[textmode_server]\n";
+	cfg << "enable=true\n";
+	cfg << "port=" << kTextPort << "\n";
+	cfg << "show_attributes=false\n";
+	cfg << "sentinel=*\n";
+	cfg << "debug_segment=0x9000\n";
+	cfg << "debug_offset=0\n";
+	cfg << "debug_length=5\n";
+	cfg << "[autoexec]\n";
+	cfg << "@echo off\n";
+	cfg << "mount c \"" << mount_dir.generic_string() << "\"\n";
+	cfg << "c:\n";
+	cfg << "memprobe\n";
 }
 
 std::filesystem::path FindDosboxExecutable()
@@ -517,6 +546,175 @@ TEST(TextModeRoundTripTest, EchoesInjectedKeys)
 	// std::filesystem::remove_all(temp_dir, ec);
 }
 
+TEST(TextModeRoundTripTest, MemoryPeekPokeDebug)
+{
+	if (SDLNet_Init() != 0) {
+		FAIL() << "SDL_net initialisation failed";
+	}
+	struct NetCleanup {
+		~NetCleanup() { SDLNet_Quit(); }
+	} net_cleanup;
+
+	setenv("SDL_VIDEODRIVER", "dummy", 1);
+	setenv("SDL_AUDIODRIVER", "dummy", 1);
+
+	const auto temp_dir = std::filesystem::temp_directory_path() /
+	                     ("dosbox-memprobe-" + std::to_string(getpid()) + "-" +
+	                      std::to_string(std::chrono::steady_clock::now()
+	                                               .time_since_epoch()
+	                                               .count()));
+	std::error_code ec;
+	std::filesystem::create_directories(temp_dir, ec);
+	ASSERT_FALSE(ec) << ec.message();
+
+	const auto memprobe_src = kTestsDir / "files" / "textmode" /
+	                          "memprobe.com";
+	ASSERT_TRUE(std::filesystem::exists(memprobe_src))
+	        << "Missing memprobe.com fixture";
+	std::filesystem::copy_file(memprobe_src,
+	                           temp_dir / "memprobe.com",
+	                           std::filesystem::copy_options::overwrite_existing,
+	                           ec);
+	ASSERT_FALSE(ec) << ec.message();
+
+	const auto config_path = temp_dir / "memprobe.conf";
+	WriteMemoryProbeConfig(config_path, temp_dir);
+
+	const auto dosbox_path = FindDosboxExecutable();
+	ASSERT_FALSE(dosbox_path.empty()) << "Unable to locate dosbox executable";
+
+	std::vector<std::string> args = {
+	        dosbox_path.string(), "-conf", config_path.string(), "-noconsole"};
+
+	PosixProcess process(args);
+
+	SocketGuard text_socket(WaitForConnection(kTextPort, std::chrono::seconds(5)));
+	ASSERT_NE(text_socket.socket, nullptr) << "Failed to connect to frame server";
+
+	constexpr int kMaxFrameAttempts = 120;
+	std::string last_frame;
+	bool saw_init = false;
+
+	for (int attempt = 0; attempt < kMaxFrameAttempts && !saw_init; ++attempt) {
+		if (!EnsureSend(text_socket, std::string("GET\n"))) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			continue;
+		}
+		last_frame = ReceiveResponse(text_socket.socket, std::chrono::milliseconds(500));
+		if (last_frame.empty()) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			continue;
+		}
+		const auto parsed = ParseFrame(last_frame);
+		if (!parsed) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			continue;
+		}
+		if (parsed->payload_plain.find("INIT") != std::string::npos) {
+			saw_init = true;
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
+
+	ASSERT_TRUE(saw_init) << "Did not observe initial probe output\n" << last_frame;
+
+	ASSERT_TRUE(EnsureSend(text_socket, std::string("DEBUG\n")));
+	const auto debug_initial =
+	        ReceiveResponse(text_socket.socket, std::chrono::milliseconds(500));
+	EXPECT_NE(debug_initial.find("address=0x00009000 data=494E495424"),
+	          std::string::npos)
+	        << "Unexpected DEBUG response: " << debug_initial;
+
+	ASSERT_TRUE(EnsureSend(text_socket, std::string("POKE 0x9000 484F535424\n")));
+	const auto poke_resp =
+	        ReceiveResponse(text_socket.socket, std::chrono::milliseconds(500));
+	EXPECT_EQ(poke_resp, "OK\n");
+
+	ASSERT_TRUE(EnsureSend(text_socket, std::string("DEBUG\n")));
+	const auto debug_after =
+	        ReceiveResponse(text_socket.socket, std::chrono::milliseconds(500));
+	EXPECT_NE(debug_after.find("address=0x00009000 data=484F535424"),
+	          std::string::npos)
+	        << "Unexpected DEBUG response after poke: " << debug_after;
+
+	ASSERT_TRUE(EnsureSend(text_socket, std::string("PEEK 0x9000 5\n")));
+	const auto peek_after =
+	        ReceiveResponse(text_socket.socket, std::chrono::milliseconds(500));
+	EXPECT_NE(peek_after.find("address=0x00009000 data=484F535424"),
+	          std::string::npos)
+	        << "Unexpected PEEK response after poke: " << peek_after;
+
+	bool saw_host = false;
+	for (int attempt = 0; attempt < kMaxFrameAttempts && !saw_host; ++attempt) {
+		if (!EnsureSend(text_socket, std::string("GET\n"))) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			continue;
+		}
+		last_frame = ReceiveResponse(text_socket.socket, std::chrono::milliseconds(500));
+		if (last_frame.empty()) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			continue;
+		}
+		const auto parsed = ParseFrame(last_frame);
+		if (!parsed) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			continue;
+		}
+		if (parsed->payload_plain.find("HOST") != std::string::npos) {
+			saw_host = true;
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
+	EXPECT_TRUE(saw_host) << "Frame did not reflect poked data\n" << last_frame;
+
+	ASSERT_TRUE(EnsureSend(text_socket, std::string("POKE 0x9000 4558495424\n")));
+	const auto exit_poke =
+	        ReceiveResponse(text_socket.socket, std::chrono::milliseconds(500));
+	EXPECT_EQ(exit_poke, "OK\n");
+
+	bool prompt_seen = false;
+	for (int attempt = 0; attempt < kMaxFrameAttempts && !prompt_seen; ++attempt) {
+		const auto frame =
+		        SendCommandAndReceive(kTextPort, "GET\n", std::chrono::milliseconds(500));
+		if (frame.empty()) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			continue;
+		}
+		const auto parsed = ParseFrame(frame);
+		if (!parsed) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			continue;
+		}
+		if (parsed->payload_plain.find("Z:\\>") != std::string::npos) {
+			prompt_seen = true;
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
+	EXPECT_TRUE(prompt_seen) << "Did not observe DOS prompt after probe exit";
+
+	ASSERT_TRUE(EnsureSend(text_socket, std::string("EXIT\n")));
+	std::string exit_ack;
+	for (int attempt = 0; attempt < 5; ++attempt) {
+		const auto chunk =
+		        ReceiveResponse(text_socket.socket, std::chrono::milliseconds(500));
+		exit_ack += chunk;
+		if (exit_ack.find("OK\n") != std::string::npos || chunk.empty()) {
+			break;
+		}
+	}
+	EXPECT_NE(exit_ack.find("OK\n"), std::string::npos)
+	        << "Unexpected EXIT acknowledgement\n" << exit_ack;
+
+	const int status = process.WaitForExit(std::chrono::seconds(10));
+	EXPECT_TRUE(WIFEXITED(status)) << "dosbox did not exit cleanly";
+	if (WIFEXITED(status)) {
+		EXPECT_EQ(WEXITSTATUS(status), 0);
+	}
+}
+
 TEST(TextModeRoundTripTest, CloseAfterResponseHandlesMultipleCommands)
 {
 	if (SDLNet_Init() != 0) {
@@ -609,6 +807,11 @@ const auto type_resp = SendCommandAndReceive(
 #else
 
 TEST(TextModeRoundTripTest, EchoesInjectedKeys)
+{
+	GTEST_SKIP() << "Round-trip integration test not implemented on this platform.";
+}
+
+TEST(TextModeRoundTripTest, MemoryPeekPokeDebug)
 {
 	GTEST_SKIP() << "Round-trip integration test not implemented on this platform.";
 }
